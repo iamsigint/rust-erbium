@@ -1,0 +1,104 @@
+[package]
+name = "erbium-blockchain"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core basics
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+log = "0.4"
+hex = "0.4"
+anyhow = "1.0"
+
+# Serialization
+bincode = "1.3"
+
+# Basic crypto
+sha2 = "0.10"
+sha3 = "0.10"
+blake3 = "1.5"
+rand = "0.8"
+
+# Timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# Web API
+warp = "0.3"
+jsonrpc-core = "18.0"
+jsonrpc-core-client = "18.0.0"
+jsonrpc-http-server = "18.0"
+jsonrpc-derive = "18.0"
+
+# GraphQL
+juniper = "0.15"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full", "macros", "rt-multi-thread"] }
+
+# Utilities
+lazy_static = "1.4"
+futures = "0.3"
+async-trait = "0.1"
+
+# WebSocket utilities & StreamExt
+futures-util = "0.3"
+
+# Post-quantum cryptography
+pqcrypto-dilithium = "0.5.0"
+pqcrypto-traits = "0.3.5"
+
+# Zero-knowledge proofs - usando curve25519-dalek-ng compatível com bulletproofs
+bulletproofs = { version = "4.0.0", features = ["yoloproofs"] }
+merlin = "3.0.0"
+curve25519-dalek-ng = { version = "4.0", features = ["serde", "alloc"] }
+
+# Database
+parity-db = "0.4"
+
+# Encryption
+ring = "0.17.0"
+aes-gcm = "0.10"
+argon2 = "0.5"
+
+# URL parsing
+url = "2.4"
+
+# Temp files for tests
+tempfile = "3.8"
+
+# CLI parsing
+clap = { version = "4.0", features = ["derive"] }
+
+# Metrics
+prometheus = { version = "0.13.0", features = ["process"] }
+metrics = "0.21.1"
+metrics-exporter-prometheus = "0.12.1"
+
+# Logging
+log4rs = "1.3.0"
+
+# P2P Networking
+libp2p = { version = "0.53", features = [
+    "tcp",
+    "dns",
+    "ping",
+    "macros",
+    "tokio",
+    "noise",
+    "yamux",
+] }
+bitcoin = "0.32.7"
+bitcoincore-rpc = "0.19.0"
+web3 = "0.19.0"
+jsonrpsee = { version = "0.26.0", features = ["http-client", "client"] }
+cosmrs = "0.22.0"
+tendermint = "0.40.4"
+tendermint-rpc = "0.40.4"
+parity-scale-codec = { version = "3.7.5", features = ["derive"] }
+eth_trie = "0.6.1"
+rlp = "0.6.1"
+tendermint-light-client = "0.40.4"
+tonic = "0.14.2"
+prost = "0.14.1"

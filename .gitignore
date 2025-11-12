@@ -1,0 +1,114 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Blockchain data (should not be committed)
+erbium-data/
+data/
+node-data/
+blockchain-data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Keys and secrets (NEVER commit these!)
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+keys/
+private/
+*.priv
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+
+# Test coverage
+coverage/
+*.profraw
+
+# Documentation build
+book/
+docs/build/
+
+# CI/CD
+.github/workflows/cache/
+
+# Node modules (if any JS tooling is used)
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Qodo files
+.qodo/
+
+# Security audit reports
+security-reports/
+audit-reports/
+
+# Performance profiling
+*.perf
+perf.data*
+
+# Flame graphs
+flamegraphs/
+
+# Docker
+.dockerignore
+
+# Local development
+dev/
+development/
+local/
+
+# Archives
+*.tar.gz
+*.zip
+*.7z
+
+# Windows executables
+*.exe
+*.dll
+
+# macOS
+*.dylib
+
+# Linux
+*.so

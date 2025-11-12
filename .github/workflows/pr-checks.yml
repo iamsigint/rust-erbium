@@ -1,0 +1,93 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Quick checks for PRs
+  pr-validation:
+    name: PR Validation
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libssl-dev pkg-config
+
+    - name: Check code formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run clippy lints
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Build project
+      run: cargo build
+
+    - name: Run tests
+      run: cargo test --all
+
+    - name: Check for security vulnerabilities
+      run: |
+        cargo install cargo-audit --version 0.18.3 || true
+        cargo audit || echo "Cargo audit failed, but continuing..."
+
+    - name: Check for large files
+      run: |
+        # Check for files larger than 50MB
+        find . -type f -size +50M -not -path "./target/*" -not -path "./.git/*" | head -10 || true
+
+    - name: Check for secrets
+      run: |
+        # Simple check for potential secrets
+        if grep -r "BEGIN.*PRIVATE KEY" --include="*.rs" --include="*.toml" --include="*.md" . --exclude-dir=target --exclude-dir=.git | grep -v "example\|test\|mock"; then
+          echo "🚨 Potential private keys found in code!"
+          exit 1
+        fi
+
+  # Dependency review for PRs
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v3
+      with:
+        fail-on-severity: moderate
+
+  # CodeQL security analysis
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: rust
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2

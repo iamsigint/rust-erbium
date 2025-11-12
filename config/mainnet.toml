@@ -1,0 +1,86 @@
+# Erbium Blockchain - Mainnet Configuration
+# Production network configuration
+
+[network]
+name = "mainnet"
+chain_id = 1
+network_magic = "erbium-mainnet-v1"
+
+[node]
+# Network ports
+p2p_port = 3030
+rpc_port = 8545
+rest_port = 8080
+ws_port = 8546
+
+# Data storage
+data_dir = "./data/mainnet"
+log_level = "info"
+
+# Connection settings
+max_peers = 100
+min_peers = 10
+connection_timeout = 30
+
+# Performance
+enable_mining = false
+thread_pool_size = 8
+
+[consensus]
+# Proof of Stake settings
+consensus_type = "pos"
+block_time = 30  # seconds
+min_stake = 100000000000  # 100 ERB minimum stake
+max_validators = 100
+unbonding_period = 1209600  # 14 days in seconds
+
+[tokenomics]
+# Halving mechanism
+initial_block_reward = "15000000000"  # 15 ERB (in smallest units)
+halving_interval = 1051200  # blocks (~4 years at 30s block time)
+blocks_per_year = 1051200
+max_supply = "1000000000000000000"  # 1 billion ERB
+
+# Fee structure
+min_transaction_fee = "1000000"  # 0.001 ERB
+fee_burn_rate = 100  # 100% of fees are burned
+
+[genesis]
+timestamp = 1704067200  # 2024-01-01 00:00:00 UTC
+initial_validators = []
+initial_balances = []
+
+[security]
+enable_firewall = true
+rate_limiting = true
+max_tx_per_block = 10000
+max_block_size = 2097152  # 2MB
+
+[api]
+enable_rest = true
+enable_rpc = true
+enable_ws = true
+enable_graphql = false
+cors_origins = ["*"]
+rate_limit_per_minute = 1000
+
+[bootstrap]
+# Cloud bootstrap peers - UPDATE WITH ACTUAL PEER IDS
+# Example format: /ip4/IP_ADDRESS/tcp/3030/p2p/PEER_ID
+bootstrap_peers = [
+    # Add your cloud instances here
+    # "/ip4/1.2.3.4/tcp/3030/p2p/QmPeerId1",
+    # "/ip4/5.6.7.8/tcp/3030/p2p/QmPeerId2",
+]
+
+[cloud]
+# Cloud-specific settings (optional)
+provider = "aws"  # aws, gcp, azure, digitalocean
+region = "us-east-1"
+auto_scaling = false
+load_balancer = false
+
+# Backup settings
+enable_backups = true
+backup_interval_hours = 24
+backup_retention_days = 30

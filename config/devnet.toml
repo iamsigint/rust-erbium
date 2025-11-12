@@ -1,0 +1,19 @@
+# Devnet configuration for Erbium
+network = "devnet"
+port = 3030
+rpc_port = 8545
+rest_port = 8080
+data_dir = "./data/devnet"
+max_peers = 25
+enable_mining = true
+log_level = "debug"
+
+# RPC-related
+chain_id = 1337          # 0x539
+gas_price_wei = 1000000000 # 1 gwei
+# WARNING: dev_apply_on_send removed for security - only use in local development
+
+# Asset metadata
+asset_name = "Erbium"
+asset_symbol = "ERB"
+asset_decimals = 8
