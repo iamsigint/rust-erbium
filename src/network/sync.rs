@@ -6,20 +6,20 @@ use crate::network::p2p::P2PNode;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// Status da sincronização da blockchain
+/// Blockchain synchronization status
 #[derive(Debug, Clone, PartialEq)]
 pub enum SyncStatus {
-    /// Nó está sincronizado com a rede
+    /// Node is fully synchronized with the network
     Synced,
-    /// Nó está sincronizando, com o número do bloco atual
+    /// Node is currently syncing, showing the current block height
     Syncing(u64),
-    /// Nó está atrasado, com o número de blocos faltantes
+    /// Node is behind, showing the number of missing blocks
     Behind(u64),
-    /// Nó está inicializando
+    /// Node is initializing
     Initializing,
 }
 
-/// Gerenciador de sincronização da blockchain
+/// Blockchain synchronization manager
 pub struct SyncManager {
     blockchain: Arc<Mutex<Blockchain>>,
     _p2p_node: Arc<Mutex<P2PNode>>,
@@ -28,7 +28,7 @@ pub struct SyncManager {
 }
 
 impl SyncManager {
-    /// Cria um novo gerenciador de sincronização
+    /// Creates a new synchronization manager
     pub fn new(blockchain: Arc<Mutex<Blockchain>>, p2p_node: Arc<Mutex<P2PNode>>) -> Self {
         Self {
             blockchain,
@@ -38,69 +38,69 @@ impl SyncManager {
         }
     }
 
-    /// Inicia o processo de sincronização
+    /// Starts the blockchain synchronization process
     pub async fn start_sync(&mut self) -> Result<()> {
-        log::info!("Iniciando sincronização da blockchain");
+        log::info!("Starting blockchain synchronization");
         
-        // Atualiza o status para sincronizando
+        // Update status to syncing
         self.status = SyncStatus::Syncing(0);
         
-        // Solicita o último bloco da rede
+        // Request the latest block from the network
         self.request_latest_block().await?;
         
-        // Inicia o loop de sincronização
+        // Start the main synchronization loop
         self.sync_loop().await
     }
     
-    /// Solicita o último bloco da rede
+    /// Requests the latest block from the network
     async fn request_latest_block(&mut self) -> Result<()> {
-        log::debug!("Solicitando último bloco da rede");
+        log::debug!("Requesting the latest block from the network");
         
-        // Em uma implementação real, isso enviaria uma mensagem para a rede
-        // Aqui, apenas simulamos o recebimento de uma resposta
+        // In a real implementation, this would send a message to the network
+        // Here, we only simulate receiving a response
         
-        // Atualiza o bloco mais alto visto
+        // Update the highest seen block
         let blockchain = self.blockchain.lock().await;
         let current_height = blockchain.get_block_height() as u64;
         drop(blockchain);
         
-        // Simula que vimos um bloco mais alto na rede
+        // Simulate that we saw a higher block on the network
         self.highest_seen_block = current_height + 10;
         
         Ok(())
     }
     
-    /// Loop principal de sincronização
+    /// Main synchronization loop
     async fn sync_loop(&mut self) -> Result<()> {
-        log::info!("Iniciando loop de sincronização");
+        log::info!("Starting synchronization loop");
         
         loop {
-            // Verifica o estado atual da blockchain
+            // Check the current blockchain state
             let blockchain = self.blockchain.lock().await;
             let current_height = blockchain.get_block_height() as u64;
             drop(blockchain);
             
             if current_height >= self.highest_seen_block {
-                // Estamos sincronizados
+                // We are synchronized
                 self.status = SyncStatus::Synced;
-                log::info!("Blockchain sincronizada na altura {}", current_height);
+                log::info!("Blockchain synced at height {}", current_height);
                 break;
             } else {
-                // Ainda precisamos sincronizar
+                // Still behind, need to continue syncing
                 let blocks_behind = self.highest_seen_block - current_height;
                 self.status = SyncStatus::Behind(blocks_behind);
                 
                 log::info!(
-                    "Sincronizando: altura atual={}, altura alvo={}, blocos faltantes={}",
+                    "Syncing: current_height={}, target_height={}, blocks_remaining={}",
                     current_height,
                     self.highest_seen_block,
                     blocks_behind
                 );
                 
-                // Solicita o próximo lote de blocos
+                // Request the next batch of blocks
                 self.request_blocks(current_height + 1, 50).await?;
                 
-                // Simula um atraso para não sobrecarregar o sistema
+                // Simulate a delay to avoid overloading the system
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
         }
@@ -108,40 +108,40 @@ impl SyncManager {
         Ok(())
     }
     
-    /// Solicita um lote de blocos da rede
+    /// Requests a batch of blocks from the network
     async fn request_blocks(&self, start_height: u64, count: u64) -> Result<()> {
-        log::debug!("Solicitando blocos {} a {}", start_height, start_height + count - 1);
+        log::debug!("Requesting blocks {} to {}", start_height, start_height + count - 1);
         
-        // Em uma implementação real, isso enviaria uma mensagem para a rede
-        // e processaria os blocos recebidos
+        // In a real implementation, this would send a network message
+        // and process the received blocks
         
-        // Simula o processamento de blocos recebidos
+        // Simulate processing received blocks
         self.process_received_blocks(start_height, count).await
     }
     
-    /// Processa blocos recebidos da rede
+    /// Processes blocks received from the network
     async fn process_received_blocks(&self, start_height: u64, count: u64) -> Result<()> {
-        log::debug!("Processando {} blocos a partir da altura {}", count, start_height);
+        log::debug!("Processing {} blocks starting from height {}", count, start_height);
         
-        // Em uma implementação real, isso validaria e adicionaria os blocos à blockchain
-        // Aqui, apenas simulamos o processamento
+        // In a real implementation, this would validate and add blocks to the blockchain
+        // Here, we only simulate the process
         
-        // Simula a adição de blocos à blockchain
+        // Simulate adding blocks to the blockchain
         let mut blockchain = self.blockchain.lock().await;
         
         for i in 0..count {
             let height = start_height + i;
             
-            // Verifica se já atingimos o bloco mais alto visto
+            // Stop if we reached the highest seen block
             if height > self.highest_seen_block {
                 break;
             }
             
-            // Simula a criação de um bloco
+            // Simulate block creation
             if let Some(last_block) = blockchain.get_latest_block() {
-                let transactions = Vec::new(); // Sem transações nesta simulação
+                let transactions = Vec::new(); // No transactions in this simulation
                 
-                // Cria um novo bloco baseado no último
+                // Create a new block based on the last one
                 let mut new_block = Block::new(
                     height,
                     last_block.hash(),
@@ -150,28 +150,28 @@ impl SyncManager {
                     blockchain.get_current_difficulty(),
                 );
                 
-                // Simula a assinatura do bloco (em uma implementação real, isso seria feito corretamente)
+                // Simulate block signing (would be properly done in a real implementation)
                 let dummy_key = vec![0u8; 32];
                 new_block.sign(&dummy_key)?;
                 
-                // Adiciona o bloco à blockchain
+                // Add the new block to the blockchain
                 blockchain.add_block(new_block)?;
                 
-                log::debug!("Adicionado bloco de sincronização na altura {}", height);
+                log::debug!("Added synced block at height {}", height);
             } else {
-                return Err(BlockchainError::InvalidBlock("Não foi possível obter o último bloco".to_string()));
+                return Err(BlockchainError::InvalidBlock("Failed to retrieve latest block".to_string()));
             }
         }
         
         Ok(())
     }
     
-    /// Retorna o status atual de sincronização
+    /// Returns the current synchronization status
     pub fn get_status(&self) -> SyncStatus {
         self.status.clone()
     }
     
-    /// Verifica se o nó está sincronizado
+    /// Checks if the node is fully synchronized
     pub fn is_synced(&self) -> bool {
         self.status == SyncStatus::Synced
     }

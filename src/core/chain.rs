@@ -5,6 +5,25 @@ use super::types::{Hash, Address};
 use super::state::State;
 use crate::utils::error::{Result, BlockchainError};
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisConfig {
+    pub genesis: GenesisData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisData {
+    pub timestamp: u64,
+    pub initial_validators: Vec<String>,
+    pub initial_balances: Vec<GenesisAllocation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisAllocation {
+    pub address: String,
+    pub amount: String, // String para evitar problemas de precisão
+}
 
 pub struct Blockchain {
     pub blocks: Vec<Block>,
@@ -43,8 +62,69 @@ impl Blockchain {
     }
     
     fn create_genesis_block() -> Result<Block> {
-        let transactions = Vec::new();
-        // Added missing block number '0'
+        use std::fs;
+        use std::path::Path;
+
+        let mut transactions = Vec::new();
+
+        // Tentar ler configuração do genesis
+        let genesis_config_path = "config/genesis/allocations.toml";
+        log::info!("Tentando carregar configuração genesis de: {}", genesis_config_path);
+
+        if Path::new(genesis_config_path).exists() {
+            log::info!("Loading genesis allocations from {}", genesis_config_path);
+
+            match fs::read_to_string(genesis_config_path) {
+                Ok(config_content) => {
+                    match toml::from_str::<GenesisConfig>(&config_content) {
+                        Ok(genesis_config) => {
+                            log::info!("Found {} genesis allocations", genesis_config.genesis.initial_balances.len());
+
+                            // Criar endereço do sistema para as alocações genesis
+                            let system_address = Address::new_unchecked("0x0000000000000000000000000000000000000000".to_string());
+
+                            // Criar transações para cada alocação
+                            for (i, allocation) in genesis_config.genesis.initial_balances.iter().enumerate() {
+                                let recipient_address = Address::new(allocation.address.clone())
+                                    .map_err(|e| BlockchainError::InvalidTransaction(
+                                        format!("Invalid genesis allocation address: {}", e)
+                                    ))?;
+
+                                // Parse do amount (string para u128)
+                                let amount: u128 = allocation.amount.parse()
+                                    .map_err(|e| BlockchainError::InvalidTransaction(
+                                        format!("Invalid genesis allocation amount: {}", e)
+                                    ))?;
+
+                                // Criar transação de alocação genesis
+                                let genesis_tx = Transaction::new_transfer(
+                                    system_address.clone(),
+                                    recipient_address,
+                                    amount as u64, // Conversão segura pois nossos valores são pequenos
+                                    0, // Sem taxa para genesis
+                                    i as u64, // Nonce sequencial
+                                );
+
+                                transactions.push(genesis_tx);
+                                log::info!("Genesis allocation: {} ERB to {}", allocation.amount, allocation.address);
+                            }
+
+                            log::info!("Created {} genesis allocation transactions", transactions.len());
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to parse genesis config: {}. Using empty genesis block.", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to read genesis config file: {}. Using empty genesis block.", e);
+                }
+            }
+        } else {
+            log::info!("No genesis config found at {}. Using empty genesis block.", genesis_config_path);
+        }
+
+        // Criar bloco genesis
         let block = Block::new(
             0, // block number
             Hash::new(b"genesis"),
@@ -52,7 +132,7 @@ impl Blockchain {
             "genesis".to_string(),
             1000,
         );
-        
+
         Ok(block)
     }
     
@@ -134,25 +214,33 @@ impl Blockchain {
         }
         
         // Verify transaction signature
-        if let Some(sender_key) = self.get_account_public_key(&transaction.from) {
-            if !transaction.verify_signature(&sender_key)? {
-                return Err(BlockchainError::InvalidTransaction("Invalid transaction signature".to_string()));
+        // Skip signature verification for genesis transactions (from address 0x0)
+        if transaction.from.as_str() != "0x0000000000000000000000000000000000000000" {
+            if let Some(sender_key) = self.get_account_public_key(&transaction.from) {
+                if !transaction.verify_signature(&sender_key)? {
+                    return Err(BlockchainError::InvalidTransaction("Invalid transaction signature".to_string()));
+                }
+            } else {
+                return Err(BlockchainError::InvalidTransaction("Sender account not found".to_string()));
             }
         } else {
-            // For now, assume new accounts can send transactions (e.g., funded by genesis)
-            // In a real chain, this might be a stricter check.
-             log::warn!("Sender account {} public key not found. Skipping signature check.", transaction.from);
-            // return Err(BlockchainError::InvalidTransaction("Sender account not found".to_string()));
+            log::info!("Skipping signature verification for genesis transaction from {}", transaction.from);
         }
         
         Ok(())
     }
     
     fn verify_regular_transaction(&self, transaction: &Transaction) -> Result<()> {
+        // Skip balance and nonce checks for genesis transactions (from address 0x0)
+        if transaction.from.as_str() == "0x0000000000000000000000000000000000000000" {
+            log::info!("Skipping balance/nonce verification for genesis transaction to {}", transaction.to);
+            return Ok(());
+        }
+
         // For regular transactions, check balance and nonce
         let balance = self.state.get_balance(&transaction.from)?;
         let current_nonce = self.state.get_nonce(&transaction.from)?;
-        
+
         if balance < transaction.amount + transaction.fee {
             return Err(BlockchainError::InvalidTransaction(format!(
                 "Insufficient balance for {}: needed {}, got {}",
@@ -161,7 +249,7 @@ impl Blockchain {
                 balance
             )));
         }
-        
+
         if transaction.nonce != current_nonce {
             return Err(BlockchainError::InvalidTransaction(format!(
                 "Invalid nonce for {}: expected {}, got {}",
@@ -170,7 +258,7 @@ impl Blockchain {
                 transaction.nonce
             )));
         }
-        
+
         Ok(())
     }
     

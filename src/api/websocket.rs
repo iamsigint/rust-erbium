@@ -1,7 +1,7 @@
 // src/api/websocket.rs
 use warp::ws::{WebSocket, Ws, Message};
 use warp::Filter;
-use futures_util::{SinkExt, StreamExt}; // CORRECTION: Added SinkExt
+use futures_util::{SinkExt, StreamExt};
 use crate::utils::error::BlockchainError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -10,60 +10,60 @@ use sha2::{Sha512, Digest};
 use rand::rngs::OsRng;
 use serde::{Serialize, Deserialize};
 
-/// Sistema de endereços stealth para privacidade de transações
+/// Stealth address system for transaction privacy
 pub struct StealthAddressSystem {
     domain_separator: &'static [u8],
 }
 
-/// Endereço stealth completo com metadados
+/// Complete stealth address with metadata
 #[derive(Debug, Clone)]
 pub struct StealthAddress {
-    /// Endereço derivado
+    /// Derived address
     pub address: Address,
-    /// Chave pública efêmera usada para derivar o endereço
+    /// Ephemeral public key used to derive the address
     pub ephemeral_public_key: CompressedRistretto,
-    /// Tag de visualização para o destinatário identificar suas transações
+    /// View tag used by the recipient to identify their transactions
     pub view_tag: u8,
 }
 
-/// Par de chaves para endereços stealth
+/// Key pair for stealth addresses
 #[derive(Debug, Clone)]
 pub struct StealthKeyPair {
-    /// Chave de visualização (para identificar transações recebidas)
+    /// View key (used to identify received transactions)
     pub view_key: KeyPair,
-    /// Chave de gasto (para gastar fundos recebidos)
+    /// Spend key (used to spend received funds)
     pub spend_key: KeyPair,
 }
 
-/// Par de chaves criptográficas
+/// Cryptographic key pair
 #[derive(Debug, Clone)]
 pub struct KeyPair {
-    /// Chave privada
+    /// Private key
     pub private_key: Scalar,
-    /// Chave pública
+    /// Public key
     pub public_key: CompressedRistretto,
 }
 
-/// Metadados de endereço stealth incluídos em uma transação
+/// Stealth address metadata included in a transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StealthMetadata {
-    /// Chave pública efêmera
+    /// Ephemeral public key
     pub ephemeral_public_key: Vec<u8>,
-    /// Tag de visualização
+    /// View tag
     pub view_tag: u8,
-    /// Dados adicionais encriptados (opcional)
+    /// Optional encrypted memo data
     pub encrypted_memo: Option<Vec<u8>>,
 }
 
 impl StealthAddressSystem {
-    /// Cria um novo sistema de endereços stealth
+    /// Creates a new stealth address system
     pub fn new() -> Self {
         Self {
             domain_separator: b"erbium_stealth_address_v1",
         }
     }
     
-    /// Gera um par de chaves stealth completo
+    /// Generates a complete stealth key pair
     pub fn generate_stealth_key_pair(&self) -> Result<StealthKeyPair> {
         let view_key = self.generate_key_pair()?;
         let spend_key = self.generate_key_pair()?;
@@ -74,7 +74,7 @@ impl StealthAddressSystem {
         })
     }
     
-    /// Gera um par de chaves criptográficas
+    /// Generates a basic cryptographic key pair
     pub fn generate_key_pair(&self) -> Result<KeyPair> {
         let mut rng = OsRng;
         let private_key = Scalar::random(&mut rng);
@@ -87,36 +87,36 @@ impl StealthAddressSystem {
         })
     }
     
-    /// Gera um endereço stealth para um destinatário
+    /// Generates a stealth address for a recipient
     pub fn generate_stealth_address(
         &self,
         recipient_view_public: &CompressedRistretto,
         recipient_spend_public: &CompressedRistretto,
     ) -> Result<(StealthAddress, Scalar)> {
-        // Gerar par de chaves efêmero
+        // Generate ephemeral key pair
         let mut rng = OsRng;
         let ephemeral_private = Scalar::random(&mut rng);
         let ephemeral_public_point = &ephemeral_private * &RISTRETTO_BASEPOINT_TABLE;
         let ephemeral_public = ephemeral_public_point.compress();
         
-        // Derivar segredo compartilhado usando a chave de visualização do destinatário
+        // Derive shared secret using recipient's view public key
         let view_public_point = recipient_view_public.decompress()
             .ok_or_else(|| BlockchainError::Crypto("Invalid view public key".to_string()))?;
         
         let shared_secret_point = ephemeral_private * view_public_point;
         let shared_secret = self.hash_to_scalar(b"shared_secret", &shared_secret_point.compress().to_bytes());
         
-        // Derivar tag de visualização (primeiro byte do hash do segredo compartilhado)
+        // Derive view tag (first byte of the shared secret hash)
         let view_tag = self.derive_view_tag(&shared_secret);
         
-        // Derivar chave de gasto de destino
+        // Derive destination spend key
         let spend_public_point = recipient_spend_public.decompress()
             .ok_or_else(|| BlockchainError::Crypto("Invalid spend public key".to_string()))?;
         
         let stealth_point = spend_public_point + (&shared_secret * &RISTRETTO_BASEPOINT_TABLE);
         let stealth_point_compressed = stealth_point.compress();
         
-        // Derivar endereço a partir da chave de gasto
+        // Derive address from spend key
         let stealth_address = self.derive_address_from_public_key(&stealth_point_compressed)?;
         
         Ok((
@@ -129,13 +129,13 @@ impl StealthAddressSystem {
         ))
     }
     
-    /// Verifica se um endereço stealth pertence a um destinatário
+    /// Checks whether a stealth address belongs to a recipient
     pub fn is_stealth_address_mine(
         &self,
         stealth_metadata: &StealthMetadata,
         key_pair: &StealthKeyPair,
     ) -> Result<Option<Address>> {
-        // Decodificar a chave pública efêmera
+        // Decode ephemeral public key
         if stealth_metadata.ephemeral_public_key.len() != 32 {
             return Err(BlockchainError::Crypto("Invalid ephemeral public key length".to_string()));
         }
@@ -144,33 +144,33 @@ impl StealthAddressSystem {
         key_bytes.copy_from_slice(&stealth_metadata.ephemeral_public_key);
         let ephemeral_public = CompressedRistretto(key_bytes);
         
-        // Derivar segredo compartilhado
+        // Derive shared secret
         let ephemeral_point = ephemeral_public.decompress()
             .ok_or_else(|| BlockchainError::Crypto("Invalid ephemeral public key".to_string()))?;
         
         let shared_secret_point = key_pair.view_key.private_key * ephemeral_point;
         let shared_secret = self.hash_to_scalar(b"shared_secret", &shared_secret_point.compress().to_bytes());
         
-        // Verificar tag de visualização
+        // Verify view tag
         let expected_view_tag = self.derive_view_tag(&shared_secret);
         if expected_view_tag != stealth_metadata.view_tag {
-            return Ok(None); // Não é para este destinatário
+            return Ok(None); // Not intended for this recipient
         }
         
-        // Derivar chave de gasto
+        // Derive spend key
         let spend_public_point = key_pair.spend_key.public_key.decompress()
             .ok_or_else(|| BlockchainError::Crypto("Invalid spend public key".to_string()))?;
         
         let stealth_point = spend_public_point + (&shared_secret * &RISTRETTO_BASEPOINT_TABLE);
         let stealth_point_compressed = stealth_point.compress();
         
-        // Derivar endereço
+        // Derive address
         let stealth_address = self.derive_address_from_public_key(&stealth_point_compressed)?;
         
         Ok(Some(stealth_address))
     }
     
-    /// Deriva um endereço a partir de uma chave pública
+    /// Derives an address from a public key
     fn derive_address_from_public_key(&self, public_key: &CompressedRistretto) -> Result<Address> {
         let mut hasher = Sha512::new();
         hasher.update(self.domain_separator);
@@ -178,20 +178,20 @@ impl StealthAddressSystem {
         hasher.update(public_key.as_bytes());
         let result = hasher.finalize();
         
-        // Usar os primeiros 20 bytes para o endereço (similar ao Ethereum)
+        // Use the first 20 bytes as the address (similar to Ethereum)
         let address_bytes = &result[..20];
         let hex_address = hex::encode(address_bytes);
         
         Address::new(format!("0x{}", hex_address)).map_err(BlockchainError::from)
     }
     
-    /// Deriva uma tag de visualização a partir de um segredo compartilhado
+    /// Derives a view tag from a shared secret
     fn derive_view_tag(&self, shared_secret: &Scalar) -> u8 {
         let bytes = shared_secret.to_bytes();
         bytes[0]
     }
     
-    /// Converte bytes em um escalar usando hash
+    /// Converts bytes into a scalar using a hash
     fn hash_to_scalar(&self, context: &[u8], data: &[u8]) -> Scalar {
         let mut hasher = Sha512::new();
         hasher.update(self.domain_separator);
@@ -202,31 +202,31 @@ impl StealthAddressSystem {
         let mut scalar_bytes = [0u8; 32];
         scalar_bytes.copy_from_slice(&result[..32]);
         
-        // Reduzir o hash para um escalar válido
+        // Reduce the hash to a valid scalar
         Scalar::from_bytes_mod_order(scalar_bytes)
     }
     
-    /// Extrai metadados stealth de uma transação
+    /// Extracts stealth metadata from a transaction
     pub fn extract_stealth_metadata(&self, transaction: &Transaction) -> Option<StealthMetadata> {
-        // Em uma implementação real, isso extrairia os metadados do campo de dados da transação
-        // Aqui, verificamos se há dados e tentamos desserializar
+        // In a real implementation, this would extract metadata from the transaction's data field
+        // Here, we simply check if data exists and attempt to deserialize
         if transaction.data.is_empty() {
             return None;
         }
         
-        // Verificar se os dados começam com um marcador de metadados stealth
+        // Check if the data starts with a stealth metadata marker
         if transaction.data.len() < 4 || &transaction.data[0..4] != b"STLH" {
             return None;
         }
         
-        // Tentar desserializar os metadados
+        // Attempt to deserialize metadata
         bincode::deserialize::<StealthMetadata>(&transaction.data[4..]).ok()
     }
     
-    /// Codifica metadados stealth para inclusão em uma transação
+    /// Encodes stealth metadata for inclusion in a transaction
     pub fn encode_stealth_metadata(&self, metadata: &StealthMetadata) -> Result<Vec<u8>> {
         let mut encoded = Vec::with_capacity(4 + 64);
-        encoded.extend_from_slice(b"STLH"); // Marcador de metadados stealth
+        encoded.extend_from_slice(b"STLH"); // Stealth metadata marker
         
         let serialized = bincode::serialize(metadata)
             .map_err(|e| BlockchainError::Serialization(format!("Failed to serialize stealth metadata: {}", e)))?;
@@ -235,7 +235,7 @@ impl StealthAddressSystem {
         Ok(encoded)
     }
     
-    /// Escaneia transações em busca de endereços stealth pertencentes a um par de chaves
+    /// Scans transactions for stealth addresses belonging to a key pair
     pub fn scan_transactions(
         &self,
         transactions: &[Transaction],
@@ -254,7 +254,7 @@ impl StealthAddressSystem {
         Ok(found_addresses)
     }
     
-    /// Cria uma transação com metadados stealth
+    /// Creates a transaction with stealth metadata
     pub fn create_stealth_transaction(
         &self,
         recipient_view_public: &CompressedRistretto,
@@ -264,23 +264,23 @@ impl StealthAddressSystem {
         from: &Address,
         nonce: u64,
     ) -> Result<(Transaction, Address)> {
-        // Gerar endereço stealth
+        // Generate stealth address
         let (stealth_addr, _) = self.generate_stealth_address(
             recipient_view_public,
             recipient_spend_public,
         )?;
         
-        // Criar metadados stealth
+        // Create stealth metadata
         let metadata = StealthMetadata {
             ephemeral_public_key: stealth_addr.ephemeral_public_key.as_bytes().to_vec(),
             view_tag: stealth_addr.view_tag,
             encrypted_memo: None,
         };
         
-        // Codificar metadados
+        // Encode metadata
         let _encoded_metadata = self.encode_stealth_metadata(&metadata)?;
         
-        // Criar transação base
+        // Create base transaction
         let transaction = Transaction::new_transfer(
             from.clone(),
             stealth_addr.address.clone(),
@@ -289,8 +289,8 @@ impl StealthAddressSystem {
             nonce,
         );
         
-        // Em uma implementação real, adicionaríamos os metadados à transação
-        // e assinaríamos a transação
+        // In a real implementation, metadata would be added to the transaction
+        // and the transaction would be signed
         
         Ok((transaction, stealth_addr.address))
     }

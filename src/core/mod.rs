@@ -5,6 +5,7 @@ pub mod transaction;
 pub mod state;
 pub mod chain;
 pub mod types;
+pub mod units;
 
 // Re-export commonly used types and functions
 pub use block::Block;

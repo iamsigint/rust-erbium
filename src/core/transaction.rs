@@ -300,7 +300,8 @@ impl Transaction {
     
     /// Validates the basic structure of the transaction
     pub fn validate_basic(&self) -> Result<()> {
-        if self.fee == 0 {
+        // Allow zero fee for genesis transactions (from address 0x0)
+        if self.fee == 0 && self.from.as_str() != "0x0000000000000000000000000000000000000000" {
             return Err(BlockchainError::InvalidTransaction("Zero fee".to_string()));
         }
         

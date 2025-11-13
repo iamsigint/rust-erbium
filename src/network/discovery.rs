@@ -5,45 +5,45 @@ use crate::utils::error::{Result, BlockchainError};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-/// Informações sobre um peer na rede
+/// Information about a peer on the network
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
-    /// Endereço do peer
+    /// Peer address
     pub addr: Multiaddr,
-    /// ID do peer
+    /// Peer ID
     pub peer_id: PeerId,
-    /// Última vez que o peer foi visto
+    /// Last time the peer was seen
     pub last_seen: Instant,
-    /// Versão do protocolo
+    /// Protocol version
     pub protocol_version: String,
-    /// Altura do bloco mais recente
+    /// Height of the most recent block
     pub block_height: u64,
 }
 
-/// Gerenciador de descoberta de peers
+/// Peer discovery manager
 pub struct PeerDiscovery {
-    /// Lista de peers conhecidos
+    /// List of known peers
     peers: HashMap<PeerId, PeerInfo>,
-    /// Lista de peers de bootstrap
+    /// Bootstrap peer list
     bootstrap_peers: Vec<Multiaddr>,
-    /// Peers banidos
+    /// Banned peers
     banned_peers: HashSet<PeerId>,
-    /// Tempo máximo sem contato para considerar um peer inativo
+    /// Maximum time without contact to consider a peer inactive
     inactive_threshold: Duration,
 }
 
 impl PeerDiscovery {
-    /// Cria um novo gerenciador de descoberta
+    /// Create a new discovery manager
     pub fn new(bootstrap_peers: Vec<Multiaddr>) -> Self {
         Self {
             peers: HashMap::new(),
             bootstrap_peers,
             banned_peers: HashSet::new(),
-            inactive_threshold: Duration::from_secs(3600), // 1 hora
+            inactive_threshold: Duration::from_secs(3600), // 1 hour
         }
     }
 
-    /// Adiciona um novo peer à lista de peers conhecidos
+    /// Adds a new peer to the list of known peers
     pub fn add_peer(&mut self, peer_id: PeerId, addr: Multiaddr, block_height: u64) -> Result<()> {
         if self.banned_peers.contains(&peer_id) {
             return Err(BlockchainError::Network(format!("Peer {} está banido", peer_id)));
@@ -53,7 +53,7 @@ impl PeerDiscovery {
             addr,
             peer_id,
             last_seen: Instant::now(),
-            protocol_version: "1.0.0".to_string(), // Versão padrão
+            protocol_version: "1.0.0".to_string(), // Standard version
             block_height,
         });
 
@@ -61,7 +61,7 @@ impl PeerDiscovery {
         Ok(())
     }
 
-    /// Atualiza as informações de um peer existente
+    /// Updates the information for an existing peer
     pub fn update_peer(&mut self, peer_id: &PeerId, block_height: u64) -> Result<()> {
         if let Some(peer) = self.peers.get_mut(peer_id) {
             peer.last_seen = Instant::now();
@@ -72,7 +72,7 @@ impl PeerDiscovery {
         }
     }
 
-    /// Remove um peer da lista de peers conhecidos
+    /// Removes a peer from the list of known peers
     pub fn remove_peer(&mut self, peer_id: &PeerId) -> Result<()> {
         if self.peers.remove(peer_id).is_some() {
             log::debug!("Removido peer: {}", peer_id);
@@ -82,7 +82,7 @@ impl PeerDiscovery {
         }
     }
 
-    /// Bane um peer
+    /// Ban a peer
     pub fn ban_peer(&mut self, peer_id: PeerId, reason: &str) -> Result<()> {
         self.peers.remove(&peer_id);
         self.banned_peers.insert(peer_id);
@@ -90,12 +90,12 @@ impl PeerDiscovery {
         Ok(())
     }
 
-    /// Verifica se um peer está banido
+    /// Checks if a peer is banned
     pub fn is_banned(&self, peer_id: &PeerId) -> bool {
         self.banned_peers.contains(peer_id)
     }
 
-    /// Retorna a lista de peers ativos
+    /// Returns the list of active peers
     pub fn get_active_peers(&self) -> Vec<PeerInfo> {
         let now = Instant::now();
         self.peers
@@ -105,19 +105,19 @@ impl PeerDiscovery {
             .collect()
     }
 
-    /// Retorna a lista de peers de bootstrap
+    /// Returns the list of bootstrap peers
     pub fn get_bootstrap_peers(&self) -> &[Multiaddr] {
         &self.bootstrap_peers
     }
 
-    /// Adiciona um peer de bootstrap
+    /// Adds a bootstrap peer
     pub fn add_bootstrap_peer(&mut self, addr: Multiaddr) {
         if !self.bootstrap_peers.contains(&addr) {
             self.bootstrap_peers.push(addr);
         }
     }
 
-    /// Limpa peers inativos
+    /// Cleans inactive peers
     pub fn clean_inactive_peers(&mut self) -> usize {
         let now = Instant::now();
         let inactive_peers: Vec<PeerId> = self.peers
@@ -135,17 +135,17 @@ impl PeerDiscovery {
         count
     }
 
-    /// Retorna o número de peers conhecidos
+    /// Returns the number of known peers
     pub fn peer_count(&self) -> usize {
         self.peers.len()
     }
 
-    /// Retorna o número de peers banidos
+    /// Returns the number of banned peers
     pub fn banned_count(&self) -> usize {
         self.banned_peers.len()
     }
 
-    /// Encontra peers com a maior altura de bloco
+    /// Find peers with the highest block height
     pub fn find_highest_block_peers(&self) -> Vec<PeerInfo> {
         if self.peers.is_empty() {
             return Vec::new();

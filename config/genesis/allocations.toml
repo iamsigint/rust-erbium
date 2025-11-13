@@ -1,0 +1,31 @@
+# Erbium Genesis Allocations Configuration
+# Este arquivo define as alocações iniciais de tokens no bloco genesis
+#
+# IMPORTANTE: Substitua os endereços abaixo pelos endereços de produção
+# que você gerou manualmente com carteiras pós-quânticas seguras.
+#
+# Valores em ERB (com 8 casas decimais):
+# - 1 ERB = 100,000,000 unidades
+# - 1M ERB = 100,000,000,000,000 unidades
+
+[genesis]
+timestamp = 1704067200  # 2024-01-01 00:00:00 UTC
+initial_validators = []
+
+initial_balances = [
+  # Reserva Pessoal (50M ERB - 5% do supply)
+  # SUBSTITUA pelo seu endereço de produção
+  { address = "0x0000000000000000000000000000000000000000", amount = "5000000000000000" },
+
+  # Development Fund (20M ERB - 2% do supply)
+  # SUBSTITUA pelo endereço do fundo de desenvolvimento
+  { address = "0x0000000000000000000000000000000000000000", amount = "2000000000000000" },
+
+  # Ecosystem Fund (20M ERB - 2% do supply)
+  # SUBSTITUA pelo endereço do fundo de ecossistema
+  { address = "0x0000000000000000000000000000000000000000", amount = "2000000000000000" },
+
+  # Treasury (10M ERB - 1% do supply)
+  # SUBSTITUA pelo endereço do treasury
+  { address = "0x0000000000000000000000000000000000000000", amount = "1000000000000000" }
+]

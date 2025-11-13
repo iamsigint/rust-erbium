@@ -24,8 +24,6 @@ pub struct Constraint {
     pub right: bulletproofs::r1cs::LinearCombination,
 }
 
-// REMOVIDO: struct LinearCombination duplicada
-
 impl ZKCircuitManager {
     pub fn new() -> Self {
         let bp_gens = BulletproofGens::new(128, 1);

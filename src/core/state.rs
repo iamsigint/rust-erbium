@@ -214,6 +214,22 @@ impl State {
     }
 
     fn apply_regular_transaction(&mut self, transaction: &Transaction) -> Result<()> {
+        // Special handling for genesis transactions (from address 0x0)
+        if transaction.from.as_str() == "0x0000000000000000000000000000000000000000" {
+            // Genesis transactions create tokens from nothing
+            log::info!("Applying genesis transaction: creating {} tokens for {}", transaction.amount, transaction.to);
+
+            // Update recipient account (create if doesn't exist)
+            let recipient_account = self.get_account_mut(&transaction.to)?;
+            recipient_account.balance += transaction.amount;
+
+            // Increase total supply for genesis allocations
+            self.total_supply += transaction.amount;
+
+            // No fee burning for genesis transactions
+            return Ok(());
+        }
+
         let sender_account = self.get_account_mut(&transaction.from)?;
 
         // Check nonce
