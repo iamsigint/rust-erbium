@@ -3,7 +3,7 @@
 [![CI/CD Pipeline](https://github.com/iamsigint/rust-erbium/actions/workflows/ci.yml/badge.svg)](https://github.com/iamsigint/rust-erbium/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/iamsigint/rust-erbium/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/iamsigint/rust-erbium/actions/workflows/pr-checks.yml)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-NO--LICENSE-red.svg)](LICENSE)
 
 Erbium is a next-generation blockchain focused on security, scalability, and interoperability. The project implements advanced technologies such as post-quantum cryptography, zero-knowledge proofs, and cross-chain bridges.
 

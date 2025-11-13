@@ -5,6 +5,7 @@ on:
     branches: [ main, master, develop ]
   pull_request:
     branches: [ main, master, develop ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -234,11 +235,11 @@ jobs:
         chmod +x scripts/deploy.sh
         NODE_COUNT=3 REGION=us-east-1 ./scripts/deploy.sh
 
-  # Docker build (only if secrets are configured)
+  # Docker build (manual trigger only)
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && env.DOCKER_USERNAME != ''
+    if: github.event_name == 'workflow_dispatch'
     environment: docker
 
     steps:
