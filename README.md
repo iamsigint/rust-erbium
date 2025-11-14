@@ -390,7 +390,7 @@ A special thanks to everyone who contributes to Erbium Blockchain! �
 
 ### Contributor Avatars
 <!-- Auto-generated contributor images from GitHub -->
-<img src="https://contrib.rocks/image?repo=iamsigint/rust-erbium" alt="Erbium Contributors" width="600"/>
+<img src="https://contrib.rocks/image?repo=iamsigint/rust-erbium" alt="Erbium Contributors" width="300"/>
 
 ### Contributor Stats
 ![Contributors](https://img.shields.io/github/contributors/iamsigint/rust-erbium)
