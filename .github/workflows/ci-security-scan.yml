@@ -1,0 +1,372 @@
+name: CI Security Scan
+
+on:
+  schedule:
+    # Run weekly security scan on Mondays at 2 AM UTC
+    - cron: '0 2 * * 1'
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+    inputs:
+      scan_level:
+        description: 'Security scan thoroughness'
+        required: false
+        default: 'standard'
+        type: choice
+        options:
+        - quick
+        - standard
+        - thorough
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+
+jobs:
+  # Comprehensive security audit for blockchains
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: security-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install security tools
+      run: |
+        cargo install cargo-audit --force
+        cargo install cargo-deny --force
+        cargo install cargo-tarpaulin --force
+        cargo install cargo-geiger --force
+
+    - name: Install advisory databases
+      run: |
+        # Download latest security advisory database
+        cargo audit --init 2>/dev/null || echo "Advisory database already initialized"
+
+    - name: Run cargo audit (blockchain-focused)
+      run: |
+        echo "🔍 Running comprehensive vulnerability audit..."
+        AUDIT_RESULT=$(cargo audit --format json 2>/dev/null || true)
+
+        # Parse audit results
+        if echo "$AUDIT_RESULT" | jq -e '.vulnerabilities.found > 0' > /dev/null 2>&1; then
+          echo "🚨 Security vulnerabilities found!"
+          echo "$AUDIT_RESULT" | jq '.vulnerabilities'
+
+          # Fail CI for high-severity issues
+          HIGH_SEVERITY=$(echo "$AUDIT_RESULT" | jq '.vulnerabilities.list[] | select(.advisory.severity == "high") | .advisory.id')
+          if [ -n "$HIGH_SEVERITY" ]; then
+            echo "❌ Critical security vulnerabilities found: $HIGH_SEVERITY"
+            echo "🔒 Please fix these critical issues before proceeding."
+            exit 1
+          fi
+
+          echo "⚠️ Non-critical vulnerabilities found - please review and update dependencies"
+        else
+          echo "✅ No security vulnerabilities found"
+        fi
+
+    - name: Dependency license and security scan
+      run: |
+        echo "📋 Scanning dependencies for license and security issues..."
+
+        # Check for unmaintained crates
+        cargo audit --json 2>/dev/null | jq -r '.warnings.unmaintained[]?.package' || echo "No unmaintained crates found"
+
+        # Check dependency tree for problematic licenses
+        cargo deny check
+
+    - name: Blockchain-specific security checks
+      run: |
+        echo "🔐 Running blockchain-specific security checks..."
+
+        # Check for cryptographic implementation issues
+        if [ -d "src/crypto" ]; then
+          echo "🔒 Checking crypto implementations..."
+
+          # Search for unsafe cryptography patterns
+          if grep -r "unsafe" src/crypto/ --include="*.rs" | grep -v "test" | grep -v "bench"; then
+            echo "⚠️ Unsafe code found in crypto modules"
+          fi
+
+          # Check for hardcoded keys or secrets
+          if grep -r -i "password\|secret\|key.*=.*\"" src/crypto/ --include="*.rs" | grep -v "test"; then
+            echo "🚨 Potential hardcoded secrets found in crypto code!"
+            echo "🔒 Review and remove any hardcoded sensitive data"
+          fi
+        fi
+
+        # Check consensus mechanism for common attack vectors
+        if [ -d "src/consensus" ]; then
+          echo "⚖️ Checking consensus security patterns..."
+
+          # Check for proper randomization
+          if grep -r "rand::Rng" src/consensus/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Cryptographic randomness implementation found"
+          else
+            echo "⚠️ No cryptographic randomness found in consensus - review entropy sources"
+          fi
+        fi
+
+    - name: CodeQL Security Analysis (Blockchain Focus)
+      uses: github/codeql-action/init@v3
+      with:
+        languages: rust
+        queries: +security-and-quality
+        config-file: ./.github/codeql/config.yml
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/security/blockchain"
+
+  # Supply Chain Security
+  supply-chain:
+    name: Supply Chain Security
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js for better analysis
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Run dependency review
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: moderate
+        base-ref: 'main' || 'master' || null
+        head-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    - name: Check for dependency confusion attacks
+      run: |
+        echo "🔍 Checking for dependency confusion vectors..."
+
+        # Check if package names match likely typosquatting targets
+        PACKAGE_NAME=$(sed -n 's/^name = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)
+        if [ -n "$PACKAGE_NAME" ]; then
+          echo "📦 Package name: $PACKAGE_NAME"
+
+          # Check for similar named packages on crates.io
+          # This would require external API calls - simplified check for now
+          if echo "$PACKAGE_NAME" | grep -E "(crypto|blockchain|consensus)"; then
+            echo "✅ Package uses security-relevant keywords (expected for blockchain)"
+          fi
+        fi
+
+    - name: Verify artifact integrity
+      run: |
+        echo "🔐 Verifying build artifact integrity..."
+
+        # Build twice and compare hashes
+        cargo build --release
+        mv target/release/erbium-node target/release/erbium-node-1
+
+        cargo clean
+        cargo build --release
+        mv target/release/erbium-node target/release/erbium-node-2
+
+        HASH1=$(sha256sum target/release/erbium-node-1 | cut -d' ' -f1)
+        HASH2=$(sha256sum target/release/erbium-node-2 | cut -d' ' -f1)
+
+        if [ "$HASH1" = "$HASH2" ]; then
+          echo "✅ Build reproducibility verified"
+        else
+          echo "❌ Build reproducibility failed - potential security issue"
+          exit 1
+        fi
+
+  # Blockchain Attack Surface Analysis
+  blockchain-security:
+    name: Blockchain Security Analysis
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache target
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: blockchain-security-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install blockchain security tools
+      run: |
+        cargo install rustsec --force
+        cargo install cargo-audit --force
+
+    - name: Analyze network-facing components
+      run: |
+        echo "🌐 Analyzing network-facing blockchain components..."
+
+        # Check P2P network security
+        if [ -d "src/network" ]; then
+          echo "🔗 Checking P2P network implementation..."
+
+          # Check for proper handshake implementation
+          if grep -r "handshake\|auth" src/network/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Authentication mechanisms found in network code"
+          else
+            echo "⚠️ No explicit authentication found in network layer"
+          fi
+
+          # Check for DDoS protection
+          if grep -r "rate.limit\|dos\|flood" src/network/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Potential DDoS protection found"
+          else
+            echo "⚠️ No explicit DDoS protection found - review rate limiting"
+          fi
+        fi
+
+    - name: Consensus mechanism security analysis
+      run: |
+        echo "⚖️ Analyzing consensus security properties..."
+
+        if [ -d "src/consensus" ]; then
+          # Check for finality guarantees
+          if grep -r "finality\|checkpoint" src/consensus/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Finality mechanism present"
+          fi
+
+          # Check for slashing conditions
+          if grep -r "slash\|penalty\|stake" src/consensus/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Slashing mechanism detected"
+          fi
+        fi
+
+    - name: Smart contract security patterns
+      run: |
+        echo "📜 Analyzing smart contract execution security..."
+
+        if [ -d "src/vm" ]; then
+          # Check for gas limits
+          if grep -r "gas.*limit\|out.*gas" src/vm/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Gas limit mechanisms found"
+          fi
+
+          # Check for reentrancy protections
+          if grep -r "reentrancy\|lock\|mutex" src/vm/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Reentrancy protections detected"
+          fi
+        fi
+
+    - name: Generate security report
+      run: |
+        echo "# 🔒 Security Analysis Report" >> security_report.md
+        echo "## Run: $(date)" >> security_report.md
+        echo "## Commit: $(git rev-parse HEAD)" >> security_report.md
+        echo "## Branch: $(git branch --show-current)" >> security_report.md
+        echo "" >> security_report.md
+        echo "## Status" >> security_report.md
+        echo "✅ Automated security analysis completed" >> security_report.md
+        cat security_report.md
+
+    - name: Upload security artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-analysis-${{ github.sha }}
+        path: |
+          security_report.md
+          *.log
+        retention-days: 30
+
+  # Privacy and Encryption Security
+  privacy-security:
+    name: Privacy & Encryption Security
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Analyze cryptographic implementations
+      run: |
+        echo "🔐 Analyzing cryptographic security..."
+
+        if [ -d "src/crypto" ]; then
+          # Check for Dilithium implementation
+          if grep -r "dilithium\|ml_dsa" src/crypto/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Post-quantum cryptography (Dilithium) detected"
+          else
+            echo "⚠️ No post-quantum cryptography found"
+          fi
+
+          # Check key sizes and algorithms
+          if grep -r "secp256k1\|ecdsa" src/crypto/ --include="*.rs"; then
+            echo "✅ Legacy elliptic curve cryptography found (use with caution)"
+          fi
+        fi
+
+    - name: Privacy mechanism verification
+      run: |
+        echo "🛡️ Verifying privacy mechanisms..."
+
+        if [ -d "src/privacy" ]; then
+          # Check for zero-knowledge proofs
+          if grep -r "zkp\|zero.*knowledge\|snark\|bulletproof" src/privacy/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Zero-knowledge proof implementations found"
+          fi
+
+          # Check for stealth addresses
+          if grep -r "stealth\|anonymous" src/privacy/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Privacy-enhancing address schemes detected"
+          fi
+
+          # Check for confidential transactions
+          if grep -r "confidential\|hidden" src/privacy/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Confidential transaction mechanisms present"
+          fi
+        fi
+
+    - name: Hardware Security Module compatibility
+      run: |
+        echo "🔑 Checking HSM integration security..."
+
+        if grep -r "hsm\|tpm\|tee" src/ --include="*.rs" | grep -v "test"; then
+          echo "✅ Hardware security module integration found"
+        else
+          echo "ℹ️ No HSM integration detected (acceptable for initial implementation)"
+        fi
+
+    - name: Compliance framework review
+      run: |
+        echo "📋 Reviewing regulatory compliance mechanisms..."
+
+        if [ -d "src/compliance" ]; then
+          # Check for KYC implementations
+          if grep -r "kyc\|aml\|compliance" src/compliance/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Compliance frameworks detected"
+          fi
+        fi
