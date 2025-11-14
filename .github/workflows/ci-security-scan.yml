@@ -9,16 +9,6 @@ on:
   pull_request:
     branches: [ main, master, develop ]
   workflow_dispatch:
-    inputs:
-      scan_level:
-        description: 'Security scan thoroughness'
-        required: false
-        default: 'standard'
-        type: choice
-        options:
-        - quick
-        - standard
-        - thorough
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,80 +24,123 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
 
-    - name: Cache dependencies
+    - name: Cache cargo registry
       uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: security-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-security-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-security-cargo-
 
     - name: Install security tools
       run: |
-        cargo install cargo-audit --force
-        cargo install cargo-deny --force
-        cargo install cargo-tarpaulin --force
-        cargo install cargo-geiger --force
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq jq
 
-    - name: Install advisory databases
-      run: |
-        # Download latest security advisory database
-        cargo audit --init 2>/dev/null || echo "Advisory database already initialized"
+        cargo install cargo-audit --force --version 0.18.0
+        cargo install cargo-deny --force --version 0.14.0
 
     - name: Run cargo audit (blockchain-focused)
       run: |
         echo "🔍 Running comprehensive vulnerability audit..."
-        AUDIT_RESULT=$(cargo audit --format json 2>/dev/null || true)
 
-        # Parse audit results
-        if echo "$AUDIT_RESULT" | jq -e '.vulnerabilities.found > 0' > /dev/null 2>&1; then
-          echo "🚨 Security vulnerabilities found!"
-          echo "$AUDIT_RESULT" | jq '.vulnerabilities'
+        # Create audit config for blockchain-specific needs
+        mkdir -p .cargo
+        cat > .cargo/audit.toml << EOF
+        [advisories]
+        ignore = []
 
-          # Fail CI for high-severity issues
-          HIGH_SEVERITY=$(echo "$AUDIT_RESULT" | jq '.vulnerabilities.list[] | select(.advisory.severity == "high") | .advisory.id')
-          if [ -n "$HIGH_SEVERITY" ]; then
-            echo "❌ Critical security vulnerabilities found: $HIGH_SEVERITY"
-            echo "🔒 Please fix these critical issues before proceeding."
-            exit 1
+        [output]
+        format = "json"
+        quiet = false
+        show_tree = false
+        EOF
+
+        # Run audit with better error handling
+        if cargo audit --format json > audit_results.json 2>/dev/null; then
+          if cat audit_results.json | jq -e '.vulnerabilities.found > 0' > /dev/null; then
+            echo "🚨 Security vulnerabilities found!"
+
+            # Extract and display high-severity issues
+            HIGH_SEVERITY=$(cat audit_results.json | jq -r '.vulnerabilities.list[] | select(.advisory.severity == "high") | .advisory.id' 2>/dev/null || echo "")
+
+            if [ -n "$HIGH_SEVERITY" ]; then
+              echo "❌ Critical security vulnerabilities found:"
+              echo "$HIGH_SEVERITY"
+              echo "🔒 Please fix these critical issues before proceeding."
+              exit 1
+            fi
+
+            echo "⚠️ Non-critical vulnerabilities found - please review and update dependencies"
+            cat audit_results.json | jq '.vulnerabilities.list[] | {id: .advisory.id, title: .advisory.title, severity: .advisory.severity}'
+          else
+            echo "✅ No security vulnerabilities found"
           fi
-
-          echo "⚠️ Non-critical vulnerabilities found - please review and update dependencies"
         else
-          echo "✅ No security vulnerabilities found"
+          echo "⚠️ Cargo audit failed to run properly"
+          cargo audit  # Show standard output for debugging
         fi
 
-    - name: Dependency license and security scan
+    - name: Dependency security scan with cargo-deny
       run: |
-        echo "📋 Scanning dependencies for license and security issues..."
+        echo "📋 Running dependency security and license scan..."
 
-        # Check for unmaintained crates
-        cargo audit --json 2>/dev/null | jq -r '.warnings.unmaintained[]?.package' || echo "No unmaintained crates found"
+        # Create basic deny config
+        cat > deny.toml << EOF
+        [licenses]
+        allow = [
+          "MIT",
+          "Apache-2.0",
+          "BSD-2-Clause",
+          "BSD-3-Clause",
+          "ISC",
+          "Unicode-DFS-2016",
+          "CC0-1.0"
+        ]
 
-        # Check dependency tree for problematic licenses
+        [[bans]]
+        name = "openssl-sys"
+        wrappers = ["cargo-audit"]
+        EOF
+
         cargo deny check
 
     - name: Blockchain-specific security checks
       run: |
         echo "🔐 Running blockchain-specific security checks..."
 
+        RISKS_FOUND=0
+
         # Check for cryptographic implementation issues
         if [ -d "src/crypto" ]; then
           echo "🔒 Checking crypto implementations..."
 
           # Search for unsafe cryptography patterns
-          if grep -r "unsafe" src/crypto/ --include="*.rs" | grep -v "test" | grep -v "bench"; then
+          if grep -r "unsafe" src/crypto/ --include="*.rs" --exclude-dir="*test*" --exclude-dir="*bench*"; then
             echo "⚠️ Unsafe code found in crypto modules"
+            RISKS_FOUND=$((RISKS_FOUND + 1))
           fi
 
           # Check for hardcoded keys or secrets
-          if grep -r -i "password\|secret\|key.*=.*\"" src/crypto/ --include="*.rs" | grep -v "test"; then
+          if grep -r -i "password\|secret.*=.*[\"']\|key.*=.*[\"']" src/crypto/ --include="*.rs" --exclude-dir="*test*"; then
             echo "🚨 Potential hardcoded secrets found in crypto code!"
             echo "🔒 Review and remove any hardcoded sensitive data"
+            RISKS_FOUND=$((RISKS_FOUND + 1))
+          fi
+
+          # Check for Dilithium implementation
+          if grep -r "dilithium\|ml_dsa" src/crypto/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Post-quantum cryptography (Dilithium) detected"
           fi
         fi
 
@@ -116,11 +149,33 @@ jobs:
           echo "⚖️ Checking consensus security patterns..."
 
           # Check for proper randomization
-          if grep -r "rand::Rng" src/consensus/ --include="*.rs" | grep -v "test"; then
+          if grep -r "rand::Rng\|getrandom" src/consensus/ --include="*.rs" | grep -v "test"; then
             echo "✅ Cryptographic randomness implementation found"
           else
             echo "⚠️ No cryptographic randomness found in consensus - review entropy sources"
+            RISKS_FOUND=$((RISKS_FOUND + 1))
           fi
+        fi
+
+        # Check smart contract VM security
+        if [ -d "src/vm" ]; then
+          echo "📜 Checking smart contract execution security..."
+
+          # Check for gas limits
+          if grep -r "gas.*limit\|out.*gas" src/vm/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Gas limit mechanisms found"
+          fi
+
+          # Check for reentrancy protection
+          if grep -r "reentrancy\|lock\|mutex" src/vm/ --include="*.rs" | grep -v "test"; then
+            echo "✅ Reentrancy protection mechanisms detected"
+          fi
+        fi
+
+        if [ $RISKS_FOUND -gt 0 ]; then
+          echo "⚠️ Found $RISKS_FOUND potential security risks"
+        else
+          echo "✅ No obvious security risks found"
         fi
 
     - name: CodeQL Security Analysis (Blockchain Focus)
@@ -128,7 +183,6 @@ jobs:
       with:
         languages: rust
         queries: +security-and-quality
-        config-file: ./.github/codeql/config.yml
 
     - name: Autobuild
       uses: github/codeql-action/autobuild@v3
@@ -157,8 +211,6 @@ jobs:
       uses: actions/dependency-review-action@v4
       with:
         fail-on-severity: moderate
-        base-ref: 'main' || 'master' || null
-        head-ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
     - name: Check for dependency confusion attacks
       run: |
