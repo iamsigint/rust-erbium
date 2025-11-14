@@ -1,32 +1,32 @@
 # Troubleshooting Guide
 
-## Compilação Errors
+## Compilation Errors
 
-### Erro: `cargo check` falha com erros de compilação
+### Error: `cargo check` fails with compilation errors
 
-**Sintomas:**
+**Symptoms:**
 ```
 error[E0425]: cannot find value `filled_amount` in this scope
 ```
 
-**Solução:**
-1. Verifique se todas as variáveis estão sendo usadas corretamente
-2. Certifique-se de que underscore prefix (`_`) não está sendo usado incorretamente
-3. Adicione `#[allow(dead_code)]` para campos não utilizados ainda
+**Solution:**
+1. Check if all variables are being used correctly
+2. Make sure underscore prefix (`_`) is not being used incorrectly
+3. Add `#[allow(dead_code)]` for fields not yet used
 
-### Erro: Dependências não encontradas
+### Error: Missing dependencies
 
-**Sintomas:**
+**Symptoms:**
 ```
 error: linking with `link.exe` failed: exit code: 1120
 ```
 
 **Windows:**
 ```powershell
-# Instalar dependências necessárias
+# Install required dependencies
 powershell -ExecutionPolicy Bypass -File scripts/install_dependencies.ps1
 
-# Verificar se OpenSSL está instalado
+# Verify OpenSSL is installed
 openssl version
 ```
 
@@ -36,47 +36,47 @@ sudo apt update
 sudo apt install build-essential libssl-dev pkg-config
 ```
 
-## Erros de Execução
+## Runtime Errors
 
-### Erro: Nó não consegue sincronizar
+### Error: Node cannot synchronize
 
-**Sintomas:**
-- Logs mostram erros de conexão de rede
-- Nó não encontra peers
+**Symptoms:**
+- Logs show network connection errors
+- Node cannot find peers
 
-**Solução:**
+**Solution:**
 ```bash
-# Verificar configuração de rede
+# Check network configuration
 cargo run --bin erbium-node -- --config config/testnet.toml --bootstrap-node
 
-# Verificar portas abertas
+# Check open ports
 netstat -tulpn | grep 30303
 ```
 
-### Erro: Transações falhando
+### Error: Transactions failing
 
-**Sintomas:**
+**Symptoms:**
 ```
 error: Insufficient balance
 ```
 
-**Solução:**
+**Solution:**
 ```rust
-// Verificar saldo da conta
+// Check account balance
 let balance = state.get_balance(&sender_address)?;
 ensure!(balance >= transaction.amount + transaction.fee, "Insufficient balance");
 ```
 
-## Problemas de Performance
+## Performance Issues
 
-### TPS baixo
+### Low TPS
 
-**Causas possíveis:**
-- Memória insuficiente
-- CPU sobrecarregada
-- Rede lenta
+**Possible causes:**
+- Insufficient memory
+- Overloaded CPU
+- Slow network
 
-**Otimização:**
+**Optimization:**
 ```toml
 # config/mainnet.toml
 [performance]
@@ -85,66 +85,66 @@ db_cache_size = "2GB"
 network_buffer_size = 67108864  # 64MB
 ```
 
-### Alto uso de CPU
+### High CPU usage
 
-**Análise:**
+**Analysis:**
 ```bash
-# Monitorar processos
+# Monitor processes
 top -p $(pidof erbium-node)
 
-# Verificar uso de memoria
+# Check memory usage
 vmstat 1
 ```
 
-## Problemas de Rede
+## Network Issues
 
-### Conexões rejeitadas
+### Rejected connections
 
-**Sintomas:**
-- Falha ao conectar com peers
-- Timeouts de rede
+**Symptoms:**
+- Failure to connect with peers
+- Network timeouts
 
-**Solução:**
+**Solution:**
 ```rust
-// Verificar timeout de conexão
+// Check connection timeout
 transport_config.connection_timeout = Duration::from_secs(30);
 transport_config.heartbeat_interval = Duration::from_secs(30);
 ```
 
-### Alta latência
+### High latency
 
-**Diagnóstico:**
+**Diagnosis:**
 ```bash
-# Testar latência da rede
+# Test network latency
 ping us-central.pool.erbium.io
 
-# Verificar conectividade do nó
+# Check node connectivity
 curl http://localhost:8080/status
 ```
 
-## Problemas de Segurança
+## Security Issues
 
-### Assinaturas inválidas
+### Invalid signatures
 
-**Sintomas:**
+**Symptoms:**
 ```
 error: Invalid signature
 ```
 
-**Verificação:**
+**Verification:**
 ```rust
-// Verificar chave pública
+// Verify public key
 let pk = PublicKey::from_bytes(&pk_bytes)?;
 let sig = Signature::from_bytes(&sig_bytes)?;
 pk.verify(message, &sig)?;
 ```
 
-### Ataque de negação de serviço
+### Denial of service attacks
 
-**Proteção:**
-1. Limite de conexões por IP
-2. Rate limiting de transações
-3. Filtros de spam
+**Protection:**
+1. Connection limits per IP
+2. Transaction rate limiting
+3. Spam filters
 4. Circuit breakers
 
 ```rust
@@ -155,18 +155,18 @@ pub struct DoSProtection {
 }
 ```
 
-## Problemas de DEX
+## DEX Issues
 
-### Ordens não sendo preenchidas
+### Orders not being filled
 
-**Possíveis causas:**
-- Liquidez insuficiente no livro de ofertas
-- Preço fora do spread
-- Ordem expirada
+**Possible causes:**
+- Insufficient liquidity in order book
+- Price outside of spread
+- Order expired
 
-**Verificação:**
+**Verification:**
 ```rust
-// Verificar status da ordem
+// Check order status
 let order = dex.get_order(&order_id)?;
 match order.status {
     OrderStatus::Expired => println!("Order expired"),
@@ -175,47 +175,47 @@ match order.status {
 }
 ```
 
-## Problemas de Layer 2
+## Layer 2 Issues
 
-### Canais não abrindo
+### Channels not opening
 
-**Verificação:**
+**Verification:**
 ```rust
-// Verificar saldos
+// Check balances
 let balance_a = state.get_balance(&participant_a)?;
 let balance_b = state.get_balance(&participant_b)?;
 
-// Capacidade mínima
+// Minimum capacity
 const MIN_CHANNEL_CAPACITY: u64 = 1000; // 1000 ERB
 ```
 
-### Disputas falhando
+### Disputes failing
 
-**Solução:**
+**Solution:**
 ```rust
-// Challenge period mínimo
-const MIN_CHALLENGE_PERIOD: u64 = 100; // blocos
+// Minimum challenge period
+const MIN_CHALLENGE_PERIOD: u64 = 100; // blocks
 
-// Verificar prova de disputa
+// Verify fraud proof
 fraud_proof.validate(&channel_state)?;
 ```
 
-## Problemas de VM
+## VM Issues
 
-### Contratos revertendo
+### Contracts reverting
 
 **Debugging:**
 ```rust
-// Verificar gas suficiente
+// Check sufficient gas
 ensure!(context.gas_limit >= MIN_GAS, "Insufficient gas");
 
-// Verificar dados válidos
+// Verify valid data
 ensure!(!data.is_empty(), "Empty call data");
 ```
 
-### Loops infinitos
+### Infinite loops
 
-**Proteção:**
+**Protection:**
 ```rust
 pub struct ExecutionLimits {
     pub max_steps: usize,
@@ -223,7 +223,7 @@ pub struct ExecutionLimits {
     pub timeout: Duration,
 }
 
-// Verificação de loop infinito
+// Infinite loop check
 fn check_execution_limits(&self, context: &ExecutionContext) -> Result<()> {
     ensure!(self.steps < self.max_steps, "Execution timeout");
     ensure!(self.memory.len() <= self.max_memory, "Out of memory");
@@ -231,56 +231,56 @@ fn check_execution_limits(&self, context: &ExecutionContext) -> Result<()> {
 }
 ```
 
-## Problemas de Armazenamento
+## Storage Issues
 
-### Corrupção de banco de dados
+### Database corruption
 
-**Recuperação:**
+**Recovery:**
 ```bash
-# Backup da base de dados
+# Database backup
 cp -r data/ data.backup/
 
-# Verificação de integridade
+# Integrity verification
 parity-db --db data/ --verify
 
-# Reconstruir índices
+# Rebuild indexes
 parity-db --db data/ --rebuild-indexes
 ```
 
-### Espaço em disco insuficiente
+### Insufficient disk space
 
-**Monitorammero:**
+**Monitoring:**
 ```bash
-# Verificar uso do espaço
+# Check disk usage
 df -h
 
-# Limpar dados antigos (periódico)
+# Clean old data (periodic)
 find data/ -name "*.log" -mtime +30 -delete
 ```
 
-## Configuração de Ambiente
+## Environment Configuration
 
 ### Windows Issues
 
-**Erro de compilação:**
+**Compilation error:**
 ```powershell
-# Instalar Visual Studio Build Tools
+# Install Visual Studio Build Tools
 # https://visualstudio.microsoft.com/visual-cpp-build-tools/
 
-# Configurar vcvars
+# Configure vcvars
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\x64\vcvars64.bat"
 ```
 
 ### Linux Issues
 
-**Permissões:**
+**Permissions:**
 ```bash
-# Fixar permissões de dados
+# Fix data permissions
 sudo chown -R $USER:$USER data/
 sudo chmod -R 755 data/
 ```
 
-**Dependências faltando:**
+**Missing dependencies:**
 ```bash
 # Ubuntu/Debian
 sudo apt install build-essential libssl-dev llvm-dev clang
@@ -289,96 +289,96 @@ sudo apt install build-essential libssl-dev llvm-dev clang
 sudo dnf install make gcc openssl-devel llvm clang
 ```
 
-## Logging e Debug
+## Logging and Debug
 
-### Níveis de Log
+### Log Levels
 
 ```rust
 use log::{info, warn, error, debug, trace};
 
-// Configuração
+// Configuration
 env_logger::Builder::new()
     .filter_level(log::LevelFilter::Debug)
     .init();
 ```
 
-### Depurar transações
+### Debug transactions
 
 ```rust
-// Logs detalhados para transações
+// Detailed transaction logs
 log::debug!("Processing transaction: {:?}", tx.hash());
 log::debug!("Sender balance: {}", sender_balance);
 log::debug!("Transaction fee: {}", tx.fee);
 log::debug!("Gas used: {}", gas_used);
 ```
 
-## Atualização e Migração
+## Updates and Migration
 
 ### Breaking Changes
 
 **v0.1.0 → v0.2.0:**
-1. Campo `state` movido para DEX manager
-2. Mudança na estrutura de OrderSide
-3. Remoção do Hash::random() method
+1. `state` field moved to DEX manager
+2. OrderSide structure changed
+3. Hash::random() method removed
 
-**Migração:**
+**Migration:**
 ```bash
-# Backup de configuração
+# Backup configuration
 cp config/ config.backup/
 
-# Atualizar binários
+# Update binaries
 cargo build --release
 
-# Migrar dados se necessário
+# Migrate data if needed
 ./migrate_data.sh
 ```
 
-## Suporte DIY
+## DIY Support
 
-### Recursos Úteis
+### Useful Resources
 
-- **GitHub Issues:** [Relatar bugs](https://github.com/iamsigint/rust-erbium/issues)
-- **Documentação:** [docs.erbium.io](https://docs.erbium.io)
+- **GitHub Issues:** [Report bugs](https://github.com/iamsigint/rust-erbium/issues)
+- **Documentation:** [docs.erbium.io](https://docs.erbium.io)
 - **Discord:** [discord.gg/erbium](https://discord.gg/erbium)
 
-### Ferramentas de Debug
+### Debug Tools
 
 ```bash
-# Analisador de logs
+# Log analyzer
 cargo run --bin log_analyzer -- logs/
 
-# Monitor de performance
+# Performance monitor
 cargo run --bin performance_monitor
 
-# Utilitário de rede
+# Network utility
 cargo run --bin network_debugger
 ```
 
-## Prevenção de Problemas
+## Problem Prevention
 
-### Manutenção Regular
+### Regular Maintenance
 
 ```bash
-# Limpeza semanal
+# Weekly cleanup
 0 2 * * 1 /path/to/cleanup.sh
 
-# Backup diario
+# Daily backup
 0 1 * * * /path/to/backup.sh
 
-# Monitoramento contínuo
+# Continuous monitoring
 */5 * * * * /path/to/health_check.sh
 ```
 
-### Monitoramento
+### Monitoring
 
-| Métrica | Threshold | Ação |
-|---------|-----------|------|
+| Metric | Threshold | Action |
+|--------|-----------|--------|
 | CPU Usage | >80% | Scale up |
 | Memory Usage | >90% | Restart |
 | Disk Space | <10% free | Cleanup |
 | Error Rate | >1% | Alert |
 
-## Contato de Emergência
+## Emergency Contact
 
 **Critical Issues:**
 - Email: security@erbium.io
@@ -390,4 +390,4 @@ cargo run --bin network_debugger
 
 ---
 
-*Esta documentação é mantida atualizada. Última atualização: 2025-11-14*
+*This documentation is kept up to date. Last update: 2025-11-14*

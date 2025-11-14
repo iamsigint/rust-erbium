@@ -1,98 +1,98 @@
 # 🌐 Erbium Blockchain - Cloud Deployment Guide
 
-Este guia explica como fazer o deployment da blockchain Erbium em múltiplas VMs na nuvem usando a configuração **mainnet.toml** (que já é otimizada para produção).
+This guide explains how to deploy the Erbium blockchain on multiple cloud VMs using the **mainnet.toml** configuration (which is already optimized for production).
 
-## 📋 Pré-requisitos
+## 📋 Prerequisites
 
-- **2+ VMs** na nuvem (AWS EC2, Google Cloud, Azure, DigitalOcean, etc.)
-- **Rust 1.70+** instalado em cada VM
-- **OpenSSL, LLVM, Perl** instalados
-- **Portas abertas**: 22 (SSH), 3030 (P2P), 8545 (RPC), 8080 (REST), 8546 (WebSocket)
-- **Chaves SSH** configuradas para acesso às VMs
+- **2+ VMs** in the cloud (AWS EC2, Google Cloud, Azure, DigitalOcean, etc.)
+- **Rust 1.70+** installed on each VM
+- **OpenSSL, LLVM, Perl** installed
+- **Open Ports**: 22 (SSH), 3030 (P2P), 8545 (RPC), 8080 (REST), 8546 (WebSocket)
+- **SSH Keys** configured for VM access
 
-## 🔒 Status de Segurança da Rede
+## 🔒 Network Security Status
 
-### ✅ **Implementado e Seguro:**
-- **Criptografia**: Noise Protocol para todas as comunicações P2P
-- **Autenticação**: Peer authentication com trust levels
-- **Firewall**: Rate limiting e DDoS protection
-- **Descoberta**: Sistema de peer discovery com bootstrap peers
-- **Sincronização**: Blockchain sync com validação de integridade
+### ✅ **Implemented and Secure:**
+- **Encryption**: Noise Protocol for all P2P communications
+- **Authentication**: Peer authentication with trust levels
+- **Firewall**: Rate limiting and DDoS protection
+- **Discovery**: Peer discovery system with bootstrap peers
+- **Synchronization**: Blockchain sync with integrity validation
 
-### ⚠️ **Atenção:**
-- **Storage encryption**: Ainda não implementado (mas planejado)
-- **API authentication**: Recomendado para produção
+### ⚠️ **Attention:**
+- **Storage encryption**: Not yet implemented (but planned)
+- **API authentication**: Recommended for production
 
-## 🚀 Deployment Simples (Passo a Passo)
+## 🚀 Simple Deployment (Step by Step)
 
-### 1. **Preparar as VMs**
+### 1. **Prepare the VMs**
 
 ```bash
-# Em cada VM, instale as dependências:
+# On each VM, install dependencies:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 
-# Clone o repositório
+# Clone the repository
 git clone https://github.com/your-org/Erbium-Node.git
 cd Erbium-Node
 
-# Instale dependências do sistema
+# Install system dependencies
 sudo ./scripts/install_dependencies.sh
 
-# Compile em modo release
+# Compile in release mode
 cargo build --release
 ```
 
-### 2. **Configurar Bootstrap Peers**
+### 2. **Configure Bootstrap Peers**
 
-Identifique os IPs públicos das suas VMs:
+Identify the public IPs of your VMs:
 
 ```
 VM1: 1.2.3.4
 VM2: 5.6.7.8
 ```
 
-### 3. **Iniciar o Primeiro Nó**
+### 3. **Start the First Node**
 
 ```bash
-# VM1 - Primeiro nó (usa mainnet.toml diretamente)
+# VM1 - First node (uses mainnet.toml directly)
 ./target/release/erbium-node --config config/mainnet.toml
 ```
 
-Aguarde o nó iniciar e anote o **Peer ID** nos logs:
+Wait for the node to start and note the **Peer ID** in the logs:
 ```
 Local peer id: 12D3KooW...
 ```
 
-### 4. **Configurar e Iniciar Nós Adicionais**
+### 4. **Configure and Start Additional Nodes**
 
 ```bash
-# VM2 - Edite config/mainnet.toml e adicione na seção [bootstrap]:
+# VM2 - Edit config/mainnet.toml and add in the [bootstrap] section:
 
 bootstrap_peers = [
     "/ip4/1.2.3.4/tcp/3030/p2p/12D3KooW..."
 ]
 
-# Inicie o nó
+# Start the node
 ./target/release/erbium-node --config config/mainnet.toml
 ```
 
-### 5. **Verificar Conectividade**
+### 5. **Verify Connectivity**
 
 ```bash
-# Verificar peers conectados via API REST
+# Check connected peers via REST API
 curl http://localhost:8080/api/v1/network/peers
 
-# Verificar status de sincronização
+# Check synchronization status
 curl http://localhost:8080/api/v1/node/status
 
-# Verificar logs
+# Check logs
 tail -f /var/log/erbium/node.log
 ```
 
-## 🔧 Configuração Mainnet (Produção)
+## 🔧 Mainnet Configuration (Production)
 
-O arquivo `config/mainnet.toml` já está otimizado para produção na nuvem:
+The `config/mainnet.toml` file is already optimized for cloud production:
 
 ```toml
 [network]
@@ -108,50 +108,50 @@ max_peers = 100
 min_peers = 10
 
 [bootstrap]
-# Adicione seus peers aqui
+# Add your peers here
 bootstrap_peers = [
-    "/ip4/IP_VM1/tcp/3030/p2p/PEER_ID_VM1",
-    "/ip4/IP_VM2/tcp/3030/p2p/PEER_ID_VM2"
+    "/ip4/VM1_IP/tcp/3030/p2p/VM1_PEER_ID",
+    "/ip4/VM2_IP/tcp/3030/p2p/VM2_PEER_ID"
 ]
 ```
 
-## 📊 Monitoramento
+## 📊 Monitoring
 
 ```bash
-# Status do nó
+# Node status
 curl http://localhost:8080/api/v1/node/status
 
-# Peers conectados
+# Connected peers
 curl http://localhost:8080/api/v1/network/peers
 
-# Status da blockchain
+# Blockchain status
 curl http://localhost:8080/api/v1/blockchain/status
 ```
 
 ## 🚨 Troubleshooting
 
-### **Nós não conectam:**
-1. Verifique portas abertas no firewall/security group
-2. Confirme Peer IDs corretos no bootstrap
-3. Teste conectividade: `telnet IP_VM2 3030`
-4. Verifique logs em `/var/log/erbium/node.log`
+### **Nodes not connecting:**
+1. Check open ports in firewall/security group
+2. Confirm correct Peer IDs in bootstrap
+3. Test connectivity: `telnet VM2_IP 3030`
+4. Check logs in `/var/log/erbium/node.log`
 
-### **Erros comuns:**
+### **Common errors:**
 ```
 ❌ Failed to bind to address: Address already in use
-✅ Solução: mude a porta ou mate processos antigos
+✅ Solution: change port or kill old processes
 
 ❌ No peers available for sync
-✅ Solução: verifique bootstrap peers
+✅ Solution: check bootstrap peers
 ```
 
-## 🎯 Checklist de Produção
+## 🎯 Production Checklist
 
-- [ ] **Segurança**: Noise encryption ativo
-- [ ] **Conectividade**: Todos os nós conectados
-- [ ] **Sincronização**: Blockchain sincronizada
-- [ ] **Monitoramento**: Logs e métricas ativos
+- [ ] **Security**: Noise encryption active
+- [ ] **Connectivity**: All nodes connected
+- [ ] **Synchronization**: Blockchain synchronized
+- [ ] **Monitoring**: Logs and metrics active
 
 ---
 
-**✅ Use `config/mainnet.toml` - ele já é otimizado para produção na nuvem!** 🚀
+**✅ Use `config/mainnet.toml` - it's already optimized for cloud production!** 🚀
