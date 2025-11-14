@@ -1,3 +1,5 @@
+#![recursion_limit = "1024"]
+
 // src/lib.rs
 
 pub mod core;
@@ -7,7 +9,8 @@ pub mod network;
 pub mod privacy;
 pub mod vm;
 pub mod storage;
-pub mod api;
+// Temporarily disable API module for release 1.0.0 due to compilation issues
+// pub mod api;
 pub mod governance;
 pub mod bridges;
 pub mod utils;
