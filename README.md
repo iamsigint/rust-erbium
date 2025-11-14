@@ -67,60 +67,61 @@
 
 ```mermaid
 graph TB
-    subgraph UIL["User Interface Layer"]
-        A[Erbium Wallet]
-        B[Erbium Explorer]
-        C[Erbium Bridge]
+    subgraph "User Interface Layer"
+        Wallet["Erbium Wallet"]
+        Explorer["Erbium Explorer"]
+        Bridge["Erbium Bridge"]
     end
 
-    subgraph API["API Layer"]
-        D[REST API]
-        E[RPC API]
-        F[WebSocket API]
-        G[GraphQL API]
+    subgraph "API Layer"
+        REST["REST API"]
+        RPC["RPC API"]
+        WS["WebSocket API"]
+        GraphQL["GraphQL API"]
     end
 
-    subgraph APP["Application Layer"]
-        H[DEX Manager]
-        I[Layer 2 Solutions]
-        J[EVM Compatible VM]
-        K[Governance DAO]
+    subgraph "Application Layer"
+        DEX["DEX Manager"]
+        L2["Layer 2 Solutions"]
+        VM["EVM Compatible VM"]
+        GOV["Governance DAO"]
     end
 
-    subgraph CORE["Core Layer"]
-        L[Consensus Engine]
-        M[Privacy Engine]
-        N[Crypto Engine]
-        O[State Manager]
+    subgraph "Core Layer"
+        Consensus["Consensus Engine"]
+        Privacy["Privacy Engine"]
+        Crypto["Crypto Engine"]
+        State["State Manager"]
     end
 
-    subgraph NET["Network Layer"]
-        P[P2P Network]
-        Q[DHT Discovery]
-        R[Transport Layer]
-        S[Block Sync]
+    subgraph "Network Layer"
+        P2P["P2P Network"]
+        DHT["DHT Discovery"]
+        Transport["Transport Layer"]
+        Sync["Block Sync"]
     end
 
-    subgraph STORE["Storage Layer"]
-        T[Database Engine]
-        U[Distributed Cache]
-        V[Encrypted Storage]
+    subgraph "Storage Layer"
+        DB["Database Engine"]
+        Cache["Distributed Cache"]
+        Encryption["Encrypted Storage"]
     end
 
-    subgraph BRIDGES["External Bridges"]
-        W[Bitcoin Bridge]
-        X[Ethereum Bridge]
-        Y[Polkadot Bridge]
-        Z[Cosmos Bridge]
+    subgraph "External Bridges"
+        BTC["Bitcoin Bridge"]
+        ETH["Ethereum Bridge"]
+        DOT["Polkadot Bridge"]
+        COSMOS["Cosmos Bridge"]
     end
 
-    UIL --> API
-    API --> APP
-    APP --> CORE
-    CORE --> NET
-    NET --> STORE
-    APP --> BRIDGES
+    A["User Interface Layer"] --> B["API Layer"]
+    B --> C["Application Layer"]
+    C --> D["Core Layer"]
+    D --> E["Network Layer"]
+    E --> F["Storage Layer"]
+    C --> G["External Bridges"]
 ```
+
 
 ## 🚀 Quick Start
 
