@@ -12,7 +12,7 @@
 [![CI/CD Pipeline](https://github.com/iamsigint/rust-erbium/actions/workflows/ci.yml/badge.svg)](https://github.com/iamsigint/rust-erbium/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/iamsigint/rust-erbium/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/iamsigint/rust-erbium/actions/workflows/pr-checks.yml)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-NO--LICENSE-red.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Private-red.svg)]()
 
 </div>
 
@@ -114,19 +114,31 @@ graph TB
         COSMOS[Cosmos Bridge]
     end
 
-    User Interface Layer --> API Layer
-    API Layer --> Application Layer
-    Application Layer --> Core Layer
-    Core Layer --> Network Layer
-    Network Layer --> Storage Layer
-    Application Layer --> External Bridges
-
-    style Erbium fill:#e67e22
-    style Core Layer fill:#f39c12
-    style External Bridges fill:#95a5a6
+    "User Interface Layer" --> "API Layer"
+    "API Layer" --> "Application Layer"
+    "Application Layer" --> "Core Layer"
+    "Core Layer" --> "Network Layer"
+    "Network Layer" --> "Storage Layer"
+    "Application Layer" --> "External Bridges"
 ```
 
 ## 🚀 Quick Start
+
+### System Requirements
+
+#### Minimum Requirements
+- **CPU**: 2 cores (4+ cores recommended)
+- **RAM**: 4GB (8GB+ recommended)
+- **Storage**: 50GB SSD (100GB+ SSD recommended)
+- **Network**: 10Mbps stable internet
+- **Operating System**: Linux (Ubuntu 20.04+), macOS 12+, Windows 10+
+
+#### Recommended Specifications (Production Node)
+- **CPU**: 8+ cores (Intel Xeon/AMD Ryzen)
+- **RAM**: 16GB+ DDR4
+- **Storage**: 500GB+ NVMe SSD
+- **Network**: 100Mbps+ dedicated bandwidth
+- **Operating System**: Ubuntu Server 22.04 LTS
 
 ### Prerequisites
 
@@ -372,9 +384,7 @@ We welcome contributions to Erbium! Please see our [Contributing Guide](CONTRIBU
 - No security vulnerabilities
 - Follow Rust best practices
 
-## 📄 License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
 ## 📞 Support & Community
 
