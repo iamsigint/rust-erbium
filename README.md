@@ -386,11 +386,11 @@ We welcome contributions to Erbium! Please see our [Contributing Guide](CONTRIBU
 
 ## 👥 Contributors
 
-A special thanks to everyone who contributes to Erbium Blockchain! �
+A special thanks to everyone who contributes to Erbium Blockchain! 
 
-### Contributor Avatars
+### Contributors
 <!-- Auto-generated contributor images from GitHub -->
-<img src="https://contrib.rocks/image?repo=iamsigint/rust-erbium" alt="Erbium Contributors" width="300"/>
+<img src="https://contrib.rocks/image?repo=iamsigint/rust-erbium" alt="Erbium Contributors" width="50"/>
 
 ### Contributor Stats
 ![Contributors](https://img.shields.io/github/contributors/iamsigint/rust-erbium)
