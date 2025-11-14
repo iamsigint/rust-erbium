@@ -384,24 +384,20 @@ We welcome contributions to Erbium! Please see our [Contributing Guide](CONTRIBU
 - No security vulnerabilities
 - Follow Rust best practices
 
-## 👥 Top Contributors
+## 👥 Contributors
 
-A special thanks to our amazing contributors who make Erbium Blockchain possible! 🎉
+A special thanks to everyone who contributes to Erbium Blockchain! �
 
-### Core Team
-- **Project Lead**: Roberto Bispo - *Architecture & Vision*
-- **Lead Developer**: [Your Name] - *Core Development*
-- **Cryptography Expert**: [Expert Name] - *Security & ZK-Proofs*
-- **DevOps Engineer**: [DevOps Name] - *Infrastructure & Deployment*
+### Contributor Avatars
+<!-- Auto-generated contributor images from GitHub -->
+<img src="https://contrib.rocks/image?repo=iamsigint/rust-erbium" alt="Erbium Contributors" width="100%"/>
 
-### Key Contributors
-<!-- Dynamic contributor images - can be generated with: -->
-<!-- https://contributors-img.web.app/preview -->
-<!-- Or use: https://github.com/jaywcjlove/github-action-contributors -->
+### Contributor Stats
+![Contributors](https://img.shields.io/github/contributors/iamsigint/rust-erbium)
+![Issues](https://img.shields.io/github/issues/iamsigint/rust-erbium)
+![PRs](https://img.shields.io/github/issues-pr/iamsigint/rust-erbium)
 
-![Contributors](https://img.shields.io/github/contributors-anon/iamsigint/rust-erbium)
-
-Want to join our contributor community? Check out our [Contributing Guide](CONTRIBUTING.md)!
+*Want to be featured here? Contribute to the project!* Check out our [Contributing Guide](CONTRIBUTING.md).
 
 ## 📞 Support & Community
 
