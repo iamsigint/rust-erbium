@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Account {
     pub balance: u64,
     pub nonce: u64,
@@ -17,13 +17,17 @@ pub struct Account {
     pub last_accessed: u64, // For cache optimization
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct State {
     accounts: HashMap<Address, Account>,
     total_supply: u64,
-    // Database persistence
+    // Note: database and cache fields are not serialized
+    #[serde(skip)]
     database: Option<Arc<RwLock<Database>>>,
     // Performance optimizations
+    #[serde(skip)]
     account_cache: SharedCache, // Cache for frequently accessed accounts
+    #[serde(skip)]
     hot_accounts: HashMap<Address, u64>, // Track access frequency
     cache_hits: u64,
     cache_misses: u64,

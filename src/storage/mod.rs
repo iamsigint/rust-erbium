@@ -5,3 +5,4 @@ pub mod cache;
 pub mod encryption;
 pub mod encrypted_db;
 pub mod database_optimization;
+pub mod blockchain_storage;

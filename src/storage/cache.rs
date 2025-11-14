@@ -27,6 +27,7 @@ pub struct CacheEntry {
     pub size_bytes: usize,
 }
 
+#[derive(Debug)]
 pub struct Cache {
     data: HashMap<CacheKey, CacheEntry>,
     lru_queue: VecDeque<CacheKey>, // LRU order for O(1) eviction

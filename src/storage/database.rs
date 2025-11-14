@@ -357,7 +357,7 @@ fn current_timestamp() -> u64 {
         .as_secs()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BufferStats {
     pub buffer_size: usize,
     pub max_buffer_size: usize,

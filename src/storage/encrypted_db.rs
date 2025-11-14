@@ -3,6 +3,7 @@ use ring::aead;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Serialize, Deserialize};
 
+#[derive(Debug)]
 pub struct EncryptedDatabase {
     enabled: bool,
     rng: SystemRandom,

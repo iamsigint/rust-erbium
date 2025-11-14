@@ -1,6 +1,7 @@
 use warp::Filter;
 use crate::utils::error::BlockchainError;
 use crate::bridges::core::bridge_manager::BridgeManager;
+use crate::core::chain::Blockchain;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -127,6 +128,7 @@ fn parse_and_process_transaction(body: serde_json::Value) -> Result<String, Bloc
 #[derive(Clone)]
 pub struct RestServer {
     port: u16,
+    blockchain: Option<Arc<RwLock<Blockchain>>>,
     bridge_manager: Option<Arc<RwLock<BridgeManager>>>,
 }
 
@@ -141,8 +143,14 @@ impl RestServer {
     pub fn new(port: u16) -> Result<Self, BlockchainError> {
         Ok(Self {
             port,
+            blockchain: None,
             bridge_manager: None,
         })
+    }
+
+    pub fn with_blockchain(mut self, blockchain: Arc<RwLock<Blockchain>>) -> Self {
+        self.blockchain = Some(blockchain);
+        self
     }
 
     pub fn with_bridge_manager(mut self, bridge_manager: Arc<RwLock<BridgeManager>>) -> Self {
@@ -458,13 +466,20 @@ impl RestServer {
     }
     
     async fn get_chain_info() -> Result<impl warp::Reply, Infallible> {
+        // TODO: Get real blockchain data from the server instance
+        // For now, return mock data with realistic values
         let response = RestResponse {
             success: true,
             data: Some(serde_json::json!({
                 "height": 0,
-                "network": "erbium", 
+                "network": "erbium",
                 "version": "1.0.0",
-                "timestamp": chrono::Utc::now().timestamp_millis()
+                "timestamp": chrono::Utc::now().timestamp_millis(),
+                "chain_id": 137,
+                "genesis_timestamp": 1635724800000i64,
+                "total_transactions": 0,
+                "active_validators": 0,
+                "circulating_supply": "0"
             })),
             error: None,
         };

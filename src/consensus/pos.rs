@@ -181,4 +181,39 @@ impl ProofOfStake {
     pub fn set_validator_public_key(&mut self, address: Address, public_key: Vec<u8>) -> Result<()> {
         self.validator_set.set_public_key(address, public_key)
     }
+
+    /// Create a new block for the validator
+    pub fn create_block(&self, previous_block: &Block, transactions: Vec<crate::core::Transaction>, validator: &Address) -> Result<Block> {
+        // Verify validator is authorized
+        if !self.validator_set.is_validator(validator) {
+            return Err(BlockchainError::Consensus("Validator not authorized".to_string()));
+        }
+
+        // Create new block
+        let mut block = Block::new(
+            previous_block.header.number + 1,
+            previous_block.hash(),
+            transactions,
+            validator.as_str().to_string(),
+            previous_block.header.difficulty,
+        );
+
+        // Sign the block with validator's key
+        let _validator_key = self.validator_set.get_public_key(validator)
+            .ok_or_else(|| BlockchainError::Consensus("Validator key not found".to_string()))?;
+
+        // In production, this would use proper Dilithium signing
+        // For now, we use a placeholder signature
+        let signature_data = format!("block_signature_{}", block.hash().to_hex());
+        block.signature = signature_data.into_bytes();
+
+        Ok(block)
+    }
+
+    /// Check if node can mine (has minimum stake)
+    pub fn can_mine(&self, address: &Address) -> bool {
+        self.staking_pool.get(address).map_or(false, |stake| *stake >= self.config.min_stake)
+    }
+
+
 }

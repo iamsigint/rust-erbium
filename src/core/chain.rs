@@ -3,8 +3,11 @@
 use super::{Block, Transaction};
 use super::types::{Hash, Address};
 use super::state::State;
+use crate::storage::blockchain_storage::BlockchainStorage;
 use crate::utils::error::{Result, BlockchainError};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -426,23 +429,195 @@ impl Blockchain {
         if self.blocks.len() < 2 {
             return 0.0;
         }
-        
+
         let recent_blocks = &self.blocks[self.blocks.len().saturating_sub(10)..];
         let total_transactions: usize = recent_blocks.iter()
             .map(|block| block.transactions.len())
             .sum();
-        
+
         if recent_blocks.len() < 2 {
             return 0.0;
         }
-        
-        let time_span = recent_blocks.last().unwrap().header.timestamp 
+
+        let time_span = recent_blocks.last().unwrap().header.timestamp
             - recent_blocks.first().unwrap().header.timestamp;
-        
+
         if time_span == 0 {
             return 0.0;
         }
-        
+
         (total_transactions as f64) / (time_span as f64 / 1000.0) // Convert ms to seconds
+    }
+
+    /// Find a transaction by its hash across all blocks
+    pub fn get_transaction_by_hash(&self, tx_hash: &Hash) -> Option<(&Transaction, usize, usize)> {
+        for (block_height, block) in self.blocks.iter().enumerate() {
+            for (tx_index, tx) in block.transactions.iter().enumerate() {
+                if &tx.hash() == tx_hash {
+                    return Some((tx, block_height, tx_index));
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Persistent blockchain with database storage
+pub struct PersistentBlockchain {
+    blockchain: Blockchain,
+    storage: Arc<RwLock<BlockchainStorage>>,
+}
+
+impl PersistentBlockchain {
+    /// Create new persistent blockchain
+    pub async fn new(data_dir: &str) -> Result<Self> {
+        let storage = Arc::new(RwLock::new(BlockchainStorage::new(data_dir).await?));
+
+        // Try to load existing blockchain from storage
+        {
+            let storage_read = storage.read().await;
+            if let Ok(latest_height) = storage_read.get_latest_height().await {
+                if latest_height > 0 {
+                    log::info!("Loading existing blockchain from storage (height: {})", latest_height);
+                    drop(storage_read); // Release the read lock
+                    return Self::load_from_storage(storage).await;
+                }
+            }
+        }
+
+        // Create new blockchain
+        log::info!("Creating new blockchain with persistence");
+        let blockchain = Blockchain::new()?;
+        let persistent = Self { blockchain, storage };
+
+        // Store genesis block
+        if let Some(genesis_block) = persistent.blockchain.blocks.first() {
+            persistent.storage.write().await.store_block(genesis_block).await?;
+            for (tx_index, tx) in genesis_block.transactions.iter().enumerate() {
+                persistent.storage.write().await.store_transaction(tx, 0, tx_index).await?;
+            }
+        }
+
+        // Store initial state
+        persistent.storage.write().await.store_state(&persistent.blockchain.state).await?;
+
+        Ok(persistent)
+    }
+
+    /// Load blockchain from storage
+    async fn load_from_storage(storage: Arc<RwLock<BlockchainStorage>>) -> Result<Self> {
+        let mut blockchain = Blockchain::new()?; // Start with genesis
+
+        // Load latest height
+        let latest_height = {
+            let storage_read = storage.read().await;
+            storage_read.get_latest_height().await?
+        };
+
+        // Load all blocks from storage
+        for height in 1..=latest_height {
+            let block = {
+                let storage_read = storage.read().await;
+                storage_read.load_block_by_height(height).await?
+            };
+
+            if let Some(block) = block {
+                blockchain.add_block(block)?;
+            }
+        }
+
+        // Load latest state
+        let state = {
+            let storage_read = storage.read().await;
+            storage_read.load_state().await?
+        };
+
+        if let Some(state) = state {
+            blockchain.state = state;
+        }
+
+        log::info!("Loaded blockchain with {} blocks", blockchain.get_block_height());
+
+        Ok(Self { blockchain, storage })
+    }
+
+    /// Add block with persistence
+    pub async fn add_block(&mut self, block: Block) -> Result<()> {
+        // Add to in-memory blockchain
+        self.blockchain.add_block(block.clone())?;
+
+        // Persist block
+        self.storage.write().await.store_block(&block).await?;
+
+        // Store transactions
+        for (tx_index, tx) in block.transactions.iter().enumerate() {
+            self.storage.write().await.store_transaction(tx, block.header.number, tx_index).await?;
+        }
+
+        // Update state in storage
+        self.storage.write().await.store_state(&self.blockchain.state).await?;
+
+        Ok(())
+    }
+
+    /// Get block by hash (checks memory first, then storage)
+    pub async fn get_block_by_hash(&self, hash: &Hash) -> Result<Option<Block>> {
+        // Check memory first
+        if let Some(block) = self.blockchain.get_block_by_hash(hash) {
+            return Ok(Some(block.clone()));
+        }
+
+        // Check storage
+        let storage_read = self.storage.read().await;
+        storage_read.load_block(hash.as_bytes()).await
+    }
+
+    /// Get block by height (checks memory first, then storage)
+    pub async fn get_block_by_height(&self, height: u64) -> Result<Option<Block>> {
+        // Check memory first
+        if let Some(block) = self.blockchain.get_block_by_height(height as usize) {
+            return Ok(Some(block.clone()));
+        }
+
+        // Check storage
+        let storage_read = self.storage.read().await;
+        storage_read.load_block_by_height(height).await
+    }
+
+    /// Get transaction by hash
+    pub async fn get_transaction_by_hash(&self, tx_hash: &[u8]) -> Result<Option<Transaction>> {
+        let storage_read = self.storage.read().await;
+        storage_read.load_transaction(tx_hash).await
+    }
+
+    /// Get latest block height
+    pub async fn get_latest_height(&self) -> Result<u64> {
+        let storage_read = self.storage.read().await;
+        storage_read.get_latest_height().await
+    }
+
+    /// Get blockchain state
+    pub fn get_state(&self) -> &State {
+        &self.blockchain.state
+    }
+
+    /// Flush all pending writes to disk
+    pub async fn flush(&self) -> Result<()> {
+        self.storage.write().await.flush().await
+    }
+
+    /// Get storage statistics
+    pub async fn get_storage_stats(&self) -> Result<serde_json::Value> {
+        self.storage.read().await.get_stats().await
+    }
+
+    /// Create backup
+    pub async fn create_backup(&self, backup_path: &str) -> Result<()> {
+        self.storage.read().await.create_backup(backup_path).await
+    }
+
+    /// Access underlying blockchain for read operations
+    pub fn blockchain(&self) -> &Blockchain {
+        &self.blockchain
     }
 }

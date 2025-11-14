@@ -1,11 +1,16 @@
 // src/core/mod.rs
 
 pub mod block;
-pub mod transaction;
-pub mod state;
 pub mod chain;
+pub mod dex;
+pub mod layer2;
+pub mod mempool;
+pub mod precompiles;
+pub mod state;
+pub mod transaction;
 pub mod types;
 pub mod units;
+pub mod vm;
 
 // Re-export commonly used types and functions
 pub use block::Block;
