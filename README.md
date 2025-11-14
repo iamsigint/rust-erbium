@@ -9,8 +9,8 @@
 
 <div align="center">
 
-[![CI/CD Pipeline](https://github.com/iamsigint/rust-erbium/actions/workflows/ci.yml/badge.svg)](https://github.com/iamsigint/rust-erbium/actions/workflows/ci.yml)
-[![Security Audit](https://github.com/iamsigint/rust-erbium/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/iamsigint/rust-erbium/actions/workflows/pr-checks.yml)
+[![CI Build](https://github.com/iamsigint/rust-erbium/actions/workflows/ci-build.yml/badge.svg)](https://github.com/iamsigint/rust-erbium/actions/workflows/ci-build.yml)
+[![Security Scan](https://github.com/iamsigint/rust-erbium/actions/workflows/ci-security-scan.yml/badge.svg)](https://github.com/iamsigint/rust-erbium/actions/workflows/ci-security-scan.yml)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Private-red.svg)]()
 
@@ -114,12 +114,12 @@ graph TB
         COSMOS["Cosmos Bridge"]
     end
 
-    A["User Interface Layer"] --> B["API Layer"]
-    B --> C["Application Layer"]
-    C --> D["Core Layer"]
-    D --> E["Network Layer"]
-    E --> F["Storage Layer"]
-    C --> G["External Bridges"]
+    "User Interface Layer" --> "API Layer"
+    "API Layer" --> "Application Layer"
+    "Application Layer" --> "Core Layer"
+    "Core Layer" --> "Network Layer"
+    "Network Layer" --> "Storage Layer"
+    "Application Layer" --> "External Bridges"
 ```
 
 ## 🚀 Quick Start
