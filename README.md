@@ -67,59 +67,59 @@
 
 ```mermaid
 graph TB
-    subgraph "User Interface Layer"
-        Wallet["Erbium Wallet"]
-        Explorer["Erbium Explorer"]
-        Bridge["Erbium Bridge"]
+    subgraph UIL["User Interface Layer"]
+        A[Erbium Wallet]
+        B[Erbium Explorer]
+        C[Erbium Bridge]
     end
 
-    subgraph "API Layer"
-        REST["REST API"]
-        RPC["RPC API"]
-        WS["WebSocket API"]
-        GraphQL["GraphQL API"]
+    subgraph API["API Layer"]
+        D[REST API]
+        E[RPC API]
+        F[WebSocket API]
+        G[GraphQL API]
     end
 
-    subgraph "Application Layer"
-        DEX["DEX Manager"]
-        L2["Layer 2 Solutions"]
-        VM["EVM Compatible VM"]
-        GOV["Governance DAO"]
+    subgraph APP["Application Layer"]
+        H[DEX Manager]
+        I[Layer 2 Solutions]
+        J[EVM Compatible VM]
+        K[Governance DAO]
     end
 
-    subgraph "Core Layer"
-        Consensus["Consensus Engine"]
-        Privacy["Privacy Engine"]
-        Crypto["Crypto Engine"]
-        State["State Manager"]
+    subgraph CORE["Core Layer"]
+        L[Consensus Engine]
+        M[Privacy Engine]
+        N[Crypto Engine]
+        O[State Manager]
     end
 
-    subgraph "Network Layer"
-        P2P["P2P Network"]
-        DHT["DHT Discovery"]
-        Transport["Transport Layer"]
-        Sync["Block Sync"]
+    subgraph NET["Network Layer"]
+        P[P2P Network]
+        Q[DHT Discovery]
+        R[Transport Layer]
+        S[Block Sync]
     end
 
-    subgraph "Storage Layer"
-        DB["Database Engine"]
-        Cache["Distributed Cache"]
-        Encryption["Encrypted Storage"]
+    subgraph STORE["Storage Layer"]
+        T[Database Engine]
+        U[Distributed Cache]
+        V[Encrypted Storage]
     end
 
-    subgraph "External Bridges"
-        BTC["Bitcoin Bridge"]
-        ETH["Ethereum Bridge"]
-        DOT["Polkadot Bridge"]
-        COSMOS["Cosmos Bridge"]
+    subgraph BRIDGES["External Bridges"]
+        W[Bitcoin Bridge]
+        X[Ethereum Bridge]
+        Y[Polkadot Bridge]
+        Z[Cosmos Bridge]
     end
 
-    "User Interface Layer" --> "API Layer"
-    "API Layer" --> "Application Layer"
-    "Application Layer" --> "Core Layer"
-    "Core Layer" --> "Network Layer"
-    "Network Layer" --> "Storage Layer"
-    "Application Layer" --> "External Bridges"
+    UIL --> API
+    API --> APP
+    APP --> CORE
+    CORE --> NET
+    NET --> STORE
+    APP --> BRIDGES
 ```
 
 ## 🚀 Quick Start
