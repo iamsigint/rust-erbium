@@ -133,7 +133,7 @@ jobs:
     # Only run CodeQL on critical files changed in PR
     - name: Check for critical files changed
       id: changed-files
-      uses: tj-actions/changed-files@v40
+      uses: tj-actions/changed-files@v46
       with:
         files: |
           src/core/**
