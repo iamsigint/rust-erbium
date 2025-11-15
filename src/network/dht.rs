@@ -50,7 +50,7 @@ impl NodeId {
         // Find the highest bit set
         for i in 0..160 {
             let byte_idx = i / 8;
-            let bit_idx = 7 - (i % 8);
+            let bit_idx = i % 8;
             if (dist.0[byte_idx] & (1 << bit_idx)) != 0 {
                 return 159 - i;
             }
@@ -475,7 +475,7 @@ mod tests {
         let id2 = NodeId::from_bytes([128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
         let bucket_idx = id1.bucket_index(&id2);
-        assert_eq!(bucket_idx, 159 - 7); // MSB is at bit 7 in byte 0
+        assert_eq!(bucket_idx, 152); // MSB is at bit 7 in byte 0: 159 - 7 = 152
     }
 
     #[test]

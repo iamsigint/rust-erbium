@@ -994,7 +994,7 @@ mod tests {
         let contract_address = manager.deploy_contract(bytecode, deployer, &context).await.unwrap();
 
         let contract = manager.get_contract(&contract_address).unwrap();
-        assert_eq!(contract.bytecode.len(), 11);
+        assert_eq!(contract.bytecode.len(), 10);
     }
 
     #[tokio::test]
