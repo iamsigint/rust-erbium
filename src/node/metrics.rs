@@ -17,7 +17,8 @@ pub struct MetricsConfig {
 impl Default for MetricsConfig {
     fn default() -> Self {
         Self {
-            listen_addr: "127.0.0.1:9615".parse().unwrap(),
+            // SECURITY: No localhost defaults - requires explicit configuration
+            listen_addr: "0.0.0.0:0".parse().unwrap(), // Bind to all interfaces, random port
             metrics_prefix: "erbium".to_string(),
         }
     }

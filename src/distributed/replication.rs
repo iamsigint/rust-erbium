@@ -159,28 +159,19 @@ impl ReplicationManager {
     async fn initialize_replica_nodes(&self) -> Result<()> {
         let mut nodes = self.replica_nodes.write().await;
 
-        // Add local node as primary
+        // SECURITY: No hardcoded localhost addresses
+        // In production, nodes must be explicitly configured
+        log::warn!("REPLICATION: No replica nodes configured - add nodes explicitly in distributed setup");
+
+        // Add local node as primary (placeholder only)
         nodes.insert("local".to_string(), ReplicaNode {
             node_id: "local".to_string(),
-            address: "127.0.0.1:8333".to_string(),
+            address: "0.0.0.0:0".to_string(), // No hardcoded address
             last_heartbeat: current_timestamp(),
             status: ReplicaStatus::Primary,
             lag_seconds: 0,
             priority: 0,
         });
-
-        // Add replica nodes (simplified)
-        for i in 1..self.config.replication_factor {
-            let node_id = format!("replica_{}", i);
-            nodes.insert(node_id.clone(), ReplicaNode {
-                node_id: node_id.clone(),
-                address: format!("127.0.0.1:833{}", i + 3),
-                last_heartbeat: current_timestamp(),
-                status: ReplicaStatus::Secondary,
-                lag_seconds: 0,
-                priority: i as u8,
-            });
-        }
 
         Ok(())
     }

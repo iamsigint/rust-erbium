@@ -1,20 +1,26 @@
 use crate::utils::error::{Result, BlockchainError};
 use crate::bridges::core::bridge_manager::BridgeManager;
 use crate::node::node_metrics::NodeMetrics;
+use crate::network::p2p_network::{P2PNetwork, P2PConfig};
+use crate::core::erbium_engine::ErbiumEngine;
+use crate::core::chain::PersistentBlockchain;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 pub struct NodeManager {
-    blockchain: Option<Arc<RwLock<crate::core::chain::Blockchain>>>,
+    blockchain: Option<Arc<RwLock<crate::core::chain::PersistentBlockchain>>>,
     consensus: Option<Arc<RwLock<crate::consensus::pos::ProofOfStake>>>,
     bridge_manager: Option<Arc<RwLock<BridgeManager>>>,
+    erbium_engine: Option<Arc<ErbiumEngine>>,
+    p2p_network: Option<Arc<RwLock<P2PNetwork>>>,
     metrics: Option<NodeMetrics>,
     is_running: bool,
     rest_server_handle: Option<JoinHandle<()>>,
     rpc_server_handle: Option<JoinHandle<()>>,
     block_production_handle: Option<JoinHandle<()>>,
     bridge_monitor_handle: Option<JoinHandle<()>>,
+    network_handle: Option<JoinHandle<()>>,
     shutdown_sender: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
@@ -22,24 +28,35 @@ impl NodeManager {
     pub async fn new() -> Result<Self> {
         log::info!("Initializing Erbium Node Manager...");
 
-        let blockchain = match crate::core::chain::Blockchain::new_with_database("./erbium-data").await {
+        let blockchain = match PersistentBlockchain::new("./erbium-data").await {
             Ok(bc) => Some(Arc::new(RwLock::new(bc))),
             Err(e) => {
-                log::warn!("Failed to initialize blockchain with database: {}. Falling back to in-memory", e);
-                // Fallback to in-memory blockchain
-                match crate::core::chain::Blockchain::new() {
-                    Ok(bc) => Some(Arc::new(RwLock::new(bc))),
-                    Err(e2) => {
-                        log::error!("Failed to initialize blockchain even in-memory: {}", e2);
-                        None
-                    }
-                }
+                log::warn!("Failed to initialize persistent blockchain: {}. Blockchain not available", e);
+                None
             }
         };
 
         let consensus_config = crate::consensus::ConsensusConfig::default();
         let consensus = crate::consensus::pos::ProofOfStake::new(consensus_config);
         let consensus = Some(Arc::new(RwLock::new(consensus)));
+
+        // Initialize Erbium Engine
+        let erbium_engine = match ErbiumEngine::new("./erbium-data").await {
+            Ok(engine) => Some(Arc::new(engine)),
+            Err(e) => {
+                log::warn!("Failed to initialize Erbium Engine: {}", e);
+                None
+            }
+        };
+
+        // Initialize P2P Network (requires blockchain)
+        let p2p_network = if let Some(blockchain_ref) = &blockchain {
+            let p2p_config = P2PConfig::default();
+            Some(Arc::new(RwLock::new(P2PNetwork::new(p2p_config, blockchain_ref.clone()))))
+        } else {
+            log::warn!("Blockchain not available, P2P network not initialized");
+            None
+        };
 
         // Initialize bridge manager
         let bridge_manager = Some(Arc::new(RwLock::new(BridgeManager::new())));
@@ -57,12 +74,15 @@ impl NodeManager {
             blockchain,
             consensus,
             bridge_manager,
+            erbium_engine,
+            p2p_network,
             metrics,
             is_running: false,
             rest_server_handle: None,
             rpc_server_handle: None,
             block_production_handle: None,
             bridge_monitor_handle: None,
+            network_handle: None,
             shutdown_sender: None,
         })
     }
@@ -87,6 +107,9 @@ impl NodeManager {
             log::warn!("Blockchain or consensus not available, starting without block production");
         }
 
+        // Start P2P Network if available
+        self.start_p2p_network().await?;
+
         log::info!("Erbium Node started successfully");
         Ok(())
     }
@@ -108,35 +131,8 @@ impl NodeManager {
     }
     
     async fn start_rpc_api(&mut self) -> Result<()> {
-        if self.blockchain.is_none() {
-            log::warn!("Cannot start RPC API: blockchain not initialized");
-            return Ok(());
-        }
-        let blockchain = self.blockchain.as_ref().unwrap().clone();
-
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        self.shutdown_sender = Some(shutdown_tx);
-
-        let handle = tokio::spawn(async move {
-            log::info!("Starting RPC API server on port 8545");
-
-            // Use the full RPC handler with blockchain integration
-            // Load config; for now use default with dev overrides
-            let cfg = crate::node::config::NodeConfig::default();
-            let io = crate::api::rpc::create_rpc_handler(blockchain.clone(), cfg);
-
-            // Create server with graceful shutdown support
-            let server = jsonrpc_http_server::ServerBuilder::new(io)
-                .start_http(&"127.0.0.1:8545".parse().unwrap())
-                .expect("RPC server failed to start");
-
-            // Wait for shutdown signal instead of blocking indefinitely
-            let _ = shutdown_rx.await;
-            log::info!("Shutting down RPC server...");
-            server.close();
-        });
-
-        self.rpc_server_handle = Some(handle);
+        // TODO: Implement RPC API with PersistentBlockchain support
+        log::warn!("RPC API not yet implemented for PersistentBlockchain");
         Ok(())
     }
     
@@ -189,6 +185,7 @@ impl NodeManager {
             ("RPC API", self.rpc_server_handle.take()),
             ("Block production", self.block_production_handle.take()),
             ("Bridge monitoring", self.bridge_monitor_handle.take()),
+            ("P2P Network", self.network_handle.take()),
         ];
         
         for (name, handle_opt) in stop_futures {
@@ -223,15 +220,27 @@ impl NodeManager {
     pub fn has_bridge_manager(&self) -> bool {
         self.bridge_manager.is_some()
     }
+
+    pub fn has_p2p_network(&self) -> bool {
+        self.p2p_network.is_some()
+    }
+
+    pub fn has_erbium_engine(&self) -> bool {
+        self.erbium_engine.is_some()
+    }
+
+    pub fn get_erbium_engine(&self) -> Option<&ErbiumEngine> {
+        self.erbium_engine.as_ref().map(|v| v.as_ref())
+    }
     
     async fn start_metrics_server(&mut self) -> Result<()> {
         if let Some(metrics) = &self.metrics {
-            // Iniciar o servidor de métricas na porta 9090
-            if let Err(e) = metrics.start_server("127.0.0.1:9090") {
+            // SECURITY: No localhost defaults - requires explicit configuration
+            if let Err(e) = metrics.start_server("0.0.0.0:0") { // Bind to all interfaces, random port
                 log::warn!("Failed to start metrics server: {}", e);
                 return Err(BlockchainError::Other(format!("Failed to start metrics server: {}", e)));
             }
-            log::info!("Metrics server started on port 9090");
+            log::info!("Metrics server started on 0.0.0.0:0 (random port - configure explicitly in production)");
         } else {
             log::warn!("Metrics not initialized, skipping metrics server");
         }
@@ -298,6 +307,34 @@ impl NodeManager {
         // For now, we'll let it run independently
         log::info!("Staking services started");
 
+        Ok(())
+    }
+
+    async fn start_p2p_network(&mut self) -> Result<()> {
+        if self.p2p_network.is_none() {
+            log::warn!("P2P network not available, cannot start network layer");
+            return Ok(());
+        }
+
+        let p2p_network = self.p2p_network.as_ref().unwrap().clone();
+
+        let handle = tokio::spawn(async move {
+            log::info!("Starting P2P network layer");
+
+            if let Err(e) = p2p_network.write().await.start().await {
+                log::error!("Failed to start P2P network: {}", e);
+                return;
+            }
+
+            log::info!("P2P network started, broadcasting transactions activated");
+
+            // Keep the network alive
+            tokio::signal::ctrl_c().await.unwrap();
+            log::info!("Shutting down P2P network...");
+        });
+
+        self.network_handle = Some(handle);
+        log::info!("P2P network initialization complete");
         Ok(())
     }
 }

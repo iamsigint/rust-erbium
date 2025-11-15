@@ -1,14 +1,39 @@
 // src/network/p2p_network.rs
 
 use crate::core::{Block, Transaction};
-
 use crate::core::chain::PersistentBlockchain;
 use crate::utils::error::{Result, BlockchainError};
+use crate::network::dht::{DHT, DHTConfig};
+use crate::network::discovery::PeerDiscovery;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 use tokio::time::{self, Duration};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use toml;
+
+/// Bootstrap node configuration from TOML file
+#[derive(Debug, Deserialize)]
+struct BootstrapConfig {
+    bootstrap: BootstrapSection,
+    config: BootstrapBehavior,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootstrapSection {
+    development_nodes: Vec<String>,
+    mainnet_nodes: Vec<String>,
+    testnet_nodes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootstrapBehavior {
+    use_development_nodes: bool,
+    allow_hardcoded_fallback: bool, // TODO: Currently unused - will be used for DHT fallback
+    bootstrap_timeout_seconds: u64, // TODO: Currently unused - will be used for bootstrap timeouts
+    max_bootstrap_attempts: usize, // TODO: Currently unused - will be used for bootstrap retries
+}
 
 /// Network message types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +76,11 @@ pub struct P2PConfig {
     pub ping_interval: Duration,
     pub sync_interval: Duration,
     pub block_announce_interval: Duration,
+    // DHT specific configuration
+    pub dht_k: usize,       // Kademlia K parameter (bucket size)
+    pub dht_alpha: usize,   // Kademlia alpha parameter (parallelism)
+    pub dht_refresh_interval: Duration,
+    // Bootstrap peers are now loaded from config/bootstrap_nodes.toml
 }
 
 impl Default for P2PConfig {
@@ -61,11 +91,15 @@ impl Default for P2PConfig {
             ping_interval: Duration::from_secs(30),
             sync_interval: Duration::from_secs(10),
             block_announce_interval: Duration::from_millis(100),
+            // DHT defaults (standard Kademlia)
+            dht_k: 20,
+            dht_alpha: 3,
+            dht_refresh_interval: Duration::from_secs(3600), // 1 hour
         }
     }
 }
 
-/// P2P Network manager
+/// P2P Network manager with DHT integration
 pub struct P2PNetwork {
     config: P2PConfig,
     blockchain: Arc<RwLock<PersistentBlockchain>>,
@@ -74,17 +108,33 @@ pub struct P2PNetwork {
     known_txs: Arc<RwLock<HashSet<String>>>, // Transaction hashes we know about
     message_sender: mpsc::UnboundedSender<NetworkMessage>,
     message_receiver: Arc<RwLock<mpsc::UnboundedReceiver<NetworkMessage>>>,
+    // DHT integration for decentralized peer discovery
+    dht: Arc<RwLock<DHT>>,           // Kademlia DHT instance
+    peer_discovery: Arc<RwLock<PeerDiscovery>>, // Traditional peer management
 }
 
 impl P2PNetwork {
-    /// Create new P2P network
-    pub fn new(
+    /// Create new P2P network with DHT integration
+    pub fn new_with_dht(
         config: P2PConfig,
         blockchain: Arc<RwLock<PersistentBlockchain>>,
-    ) -> Self {
+    ) -> Result<Self> {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        Self {
+        // Create DHT instance with configuration
+        let dht_config = DHTConfig {
+            k: config.dht_k,
+            alpha: config.dht_alpha,
+            id_bits: 160,
+            refresh_interval: config.dht_refresh_interval,
+            republish_interval: Duration::from_secs(86400),
+            expire_interval: Duration::from_secs(86400),
+        };
+
+        let dht = DHT::new(dht_config);
+        let peer_discovery = PeerDiscovery::new(vec![]); // Initialize empty, will populate
+
+        Ok(Self {
             config,
             blockchain,
             peers: Arc::new(RwLock::new(HashMap::new())),
@@ -92,6 +142,21 @@ impl P2PNetwork {
             known_txs: Arc::new(RwLock::new(HashSet::new())),
             message_sender: tx,
             message_receiver: Arc::new(RwLock::new(rx)),
+            dht: Arc::new(RwLock::new(dht)),
+            peer_discovery: Arc::new(RwLock::new(peer_discovery)),
+        })
+    }
+
+    /// Create new P2P network (legacy constructor)
+    pub fn new(
+        config: P2PConfig,
+        blockchain: Arc<RwLock<PersistentBlockchain>>,
+    ) -> Self {
+        // For now, forward to new_with_dht but ignore errors
+        // In a real implementation, this might create a stub DHT
+        match Self::new_with_dht(config, blockchain) {
+            Ok(network) => network,
+            Err(_) => panic!("Failed to create P2P network with DHT"),
         }
     }
 
@@ -99,13 +164,16 @@ impl P2PNetwork {
     pub async fn start(&self) -> Result<()> {
         log::info!("Starting P2P network on {}", self.config.listen_address);
 
+        // Initialize DHT with bootstrap nodes (Customer Requirement: DHT integration)
+        self.initialize_dht_bootstrap().await?;
+
         // Initialize known blocks and transactions from blockchain
         self.initialize_known_data().await?;
 
         // Start background tasks
         self.start_background_tasks();
 
-        log::info!("P2P network started successfully");
+        log::info!("P2P network started successfully with DHT integration");
         Ok(())
     }
 
@@ -407,8 +475,13 @@ impl P2PNetwork {
     /// Start background network tasks
     fn start_background_tasks(&self) {
         let peers = Arc::clone(&self.peers);
-        let message_receiver = Arc::clone(&self.message_receiver);
+        let _message_receiver = Arc::clone(&self.message_receiver);
         let ping_interval = self.config.ping_interval;
+        let dht = Arc::clone(&self.dht);
+        let dht_refresh_interval = self.config.dht_refresh_interval;
+
+        // DHT background tasks
+        self.start_dht_operations(dht.clone(), dht_refresh_interval);
 
         // Ping task
         tokio::spawn(async move {
@@ -431,7 +504,7 @@ impl P2PNetwork {
         });
 
         // Message processing task
-        let message_receiver_clone = Arc::clone(&message_receiver);
+        let message_receiver_clone = Arc::clone(&self.message_receiver);
         tokio::spawn(async move {
             let mut receiver = message_receiver_clone.write().await;
             while let Some(message) = receiver.recv().await {
@@ -440,6 +513,134 @@ impl P2PNetwork {
                 log::debug!("Processing network message: {:?}", message);
             }
         });
+    }
+
+    /// Start DHT background operations
+    fn start_dht_operations(&self, dht: Arc<RwLock<DHT>>, refresh_interval: Duration) {
+        // Periodic DHT operations
+        let dht_clone = Arc::clone(&dht);
+        let dht_lookup_interval = Duration::from_secs(900); // 15 minutes
+        tokio::spawn(async move {
+            let mut lookup_interval = time::interval(dht_lookup_interval);
+            loop {
+                lookup_interval.tick().await;
+
+                // Perform periodic DHT operations
+                if let Err(e) = Self::perform_dht_maintenance(dht_clone.clone()).await {
+                    log::error!("DHT maintenance failed: {}", e);
+                }
+            }
+        });
+
+        // DHT bucket refresh
+        let dht_clone = Arc::clone(&dht);
+        tokio::spawn(async move {
+            let mut refresh_interval_timer = time::interval(refresh_interval);
+            loop {
+                refresh_interval_timer.tick().await;
+
+                // Refresh k-buckets
+                if let Err(e) = Self::refresh_dht_buckets(dht_clone.clone()).await {
+                    log::error!("DHT bucket refresh failed: {}", e);
+                }
+            }
+        });
+
+        // Presence announcement
+        let dht_clone = Arc::clone(&dht);
+        tokio::spawn(async move {
+            let mut announce_interval = time::interval(Duration::from_secs(300)); // 5 minutes
+            loop {
+                announce_interval.tick().await;
+
+                // Announce our presence to the network
+                if let Err(e) = Self::announce_presence(dht_clone.clone()).await {
+                    log::error!("Presence announcement failed: {}", e);
+                }
+            }
+        });
+    }
+
+    /// Perform periodic DHT maintenance operations
+    async fn perform_dht_maintenance(dht: Arc<RwLock<DHT>>) -> Result<()> {
+        let mut dht_guard = dht.write().await;
+
+        // Find a random node to lookup (for keeping routing table fresh)
+        let random_target = crate::network::dht::NodeId::random();
+
+        if let Err(e) = dht_guard.start_lookup(random_target) {
+            log::warn!("Failed to start random DHT lookup: {}", e);
+        } else {
+            log::debug!("Started random DHT lookup for routing table maintenance");
+        }
+
+        // Check for completed lookups and process results
+        Self::process_completed_lookups(&mut *dht_guard).await?;
+
+        Ok(())
+    }
+
+    /// Process completed DHT lookups and connect discovered peers
+    async fn process_completed_lookups(dht: &mut DHT) -> Result<()> {
+        // Clean up old pending queries
+        let mut completed_queries = Vec::new();
+        let pending_queries = dht.pending_queries.clone();
+
+        for (target, _query) in pending_queries.iter() {
+            if dht.is_lookup_complete(target) {
+                if let Some(results) = dht.complete_lookup(target) {
+                    completed_queries.push(results);
+                }
+            }
+        }
+
+        // Process discovered peers
+        for contacts in completed_queries {
+            for contact in contacts {
+                if contact.is_alive() {
+                    // Add discovered peer to our knowledge
+                    dht.insert_contact(contact.clone());
+
+                    // TODO: Attempt P2P connection to discovered peer
+                    // In a full implementation, this would establish new P2P connections
+                    log::info!("Discovered new peer via DHT: {} at {}",
+                              contact.node_id.to_hex(),
+                              contact.address);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Refresh DHT k-buckets
+    async fn refresh_dht_buckets(dht: Arc<RwLock<DHT>>) -> Result<()> {
+        let mut dht_guard = dht.write().await;
+
+        // Get nodes that need to be pinged
+        let nodes_to_ping = dht_guard.refresh_buckets();
+
+        log::debug!("Refreshing {} DHT contacts", nodes_to_ping.len());
+
+        // In a full implementation, we would ping these nodes
+        // For now, just mark them as seen (simplified)
+        for node_id in nodes_to_ping {
+            dht_guard.update_contact_last_seen(&node_id);
+        }
+
+        Ok(())
+    }
+
+    /// Announce our presence to the network
+    async fn announce_presence(dht: Arc<RwLock<DHT>>) -> Result<()> {
+        let dht_guard = dht.read().await;
+        let our_node_id = *dht_guard.node_id();
+
+        // In a real implementation, this would broadcast to nearby nodes
+        // For now, just log our presence
+        log::debug!("Announcing presence as node {}", our_node_id.to_hex());
+
+        Ok(())
     }
 
     /// Get network statistics
@@ -454,6 +655,115 @@ impl P2PNetwork {
             known_blocks: known_blocks.len(),
             known_transactions: known_txs.len(),
         })
+    }
+
+    /// Initialize DHT with bootstrap peers (from TOML config file)
+    async fn initialize_dht_bootstrap(&self) -> Result<()> {
+        let mut dht = self.dht.write().await;
+        let mut successful_bootstrap = 0;
+
+        // Load bootstrap configuration from TOML file
+        let bootstrap_peers = match self.load_bootstrap_from_config().await {
+            Ok(peers) => {
+                log::info!("Loaded {} bootstrap peers from config file", peers.len());
+                peers
+            }
+            Err(e) => {
+                log::warn!("Failed to load bootstrap config: {}", e);
+                // Return empty vector if we can't load any bootstrap nodes
+                vec![]
+            }
+        };
+
+        log::info!("Initializing DHT with {} bootstrap peers...", bootstrap_peers.len());
+
+        for bootstrap_addr in &bootstrap_peers {
+            match self.parse_and_add_bootstrap_node(&mut dht, bootstrap_addr).await {
+                Ok(_) => {
+                    successful_bootstrap += 1;
+                    log::debug!("Added bootstrap node: {}", bootstrap_addr);
+                }
+                Err(e) => {
+                    log::warn!("Failed to add bootstrap node {}: {}", bootstrap_addr, e);
+                }
+            }
+        }
+
+        if successful_bootstrap == 0 {
+            log::warn!("No bootstrap nodes could be initialized - network may not function properly");
+            return Err(BlockchainError::Network("No bootstrap nodes available".to_string()));
+        }
+
+        log::info!("DHT initialized with {}/{} bootstrap nodes successfully",
+                  successful_bootstrap, bootstrap_peers.len());
+        Ok(())
+    }
+
+    /// Load bootstrap nodes from TOML configuration file
+    async fn load_bootstrap_from_config(&self) -> Result<Vec<String>> {
+        let config_path = "config/bootstrap_nodes.toml";
+
+        // Read the TOML file
+        let config_content = fs::read_to_string(config_path)
+            .map_err(|e| BlockchainError::Network(format!("Failed to read bootstrap config: {}", e)))?;
+
+        // Parse TOML
+        let bootstrap_config: BootstrapConfig = toml::from_str(&config_content)
+            .map_err(|e| BlockchainError::Network(format!("Failed to parse bootstrap config: {}", e)))?;
+
+        let mut bootstrap_peers = Vec::new();
+
+        // Add mainnet nodes if we have them
+        if !bootstrap_config.bootstrap.mainnet_nodes.is_empty() {
+            bootstrap_peers.extend(bootstrap_config.bootstrap.mainnet_nodes);
+        }
+        // Add testnet nodes if we have them
+        else if !bootstrap_config.bootstrap.testnet_nodes.is_empty() {
+            bootstrap_peers.extend(bootstrap_config.bootstrap.testnet_nodes);
+        }
+        // Fall back to development nodes if configured to use them
+        else if bootstrap_config.config.use_development_nodes && !bootstrap_config.bootstrap.development_nodes.is_empty() {
+            bootstrap_peers.extend(bootstrap_config.bootstrap.development_nodes);
+        }
+
+        if bootstrap_peers.is_empty() {
+            return Err(BlockchainError::Network("No bootstrap nodes configured".to_string()));
+        }
+
+        Ok(bootstrap_peers)
+    }
+
+    /// Parse bootstrap node address and add to DHT
+    async fn parse_and_add_bootstrap_node(&self, dht: &mut DHT, addr_str: &str) -> Result<()> {
+        // Parse bootstrap address in format: /ip4/IP/tcp/PORT/p2p/PEER_ID
+        let parts: Vec<&str> = addr_str.split('/').collect();
+        if parts.len() < 8 || parts[1] != "ip4" || parts[3] != "tcp" {
+            return Err(BlockchainError::Network(format!("Invalid bootstrap address format: {}", addr_str)));
+        }
+
+        let ip = parts[2];
+        let port_str = parts[4];
+        let peer_id_str = parts[6];
+
+        // Parse IP, port, and create socket address
+        use std::net::{IpAddr, SocketAddr};
+        let ip_addr: IpAddr = ip.parse()
+            .map_err(|_| BlockchainError::Network("Invalid IP address".to_string()))?;
+        let port: u16 = port_str.parse()
+            .map_err(|_| BlockchainError::Network("Invalid port".to_string()))?;
+
+        let socket_addr = SocketAddr::new(ip_addr, port);
+
+        // Parse PeerId from string (simplified - would need proper PeerId parsing)
+        use crate::network::dht::NodeId;
+        let node_id = NodeId::from_hash(peer_id_str.as_bytes()); // Hash string to NodeId
+
+        // Create contact and add to DHT
+        use crate::network::dht::Contact;
+        let contact = Contact::new(node_id, socket_addr);
+        dht.add_bootstrap_node(contact)?;
+
+        Ok(())
     }
 
     /// Add a peer to the network

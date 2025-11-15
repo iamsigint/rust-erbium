@@ -146,7 +146,16 @@ impl ErbAmount {
                 let deci_erb = self.to_erb() * 10.0;
                 format!("{:.1} dERB", deci_erb)
             },
-            Unit::ERB => format!("{:.8} ERB", self.to_erb()),
+            Unit::ERB => {
+                let erb = self.to_erb();
+                if erb.fract() == 0.0 {
+                    format!("{:.0} ERB", erb)
+                } else {
+                    // Remove trailing zeros and dot if present
+                    let formatted = format!("{:.8}", erb).trim_end_matches('0').trim_end_matches('.').to_string();
+                    format!("{} ERB", formatted)
+                }
+            },
             Unit::KiloERB => {
                 let kilo_erb = self.to_erb() / 1_000.0;
                 format!("{:.3} kERB", kilo_erb)

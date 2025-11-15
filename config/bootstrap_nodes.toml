@@ -1,0 +1,56 @@
+# Erbium Bootstrap Nodes Configuration
+# This file contains initial seed nodes for DHT peer discovery
+# These are hardcoded community nodes that help bootstrap the network
+# When no other peers are known, new nodes connect to these seeds first
+
+[bootstrap]
+
+# SECURITY FIRST: No localhost hardcoded addresses
+# This file contains bootstrap nodes for DHT peer discovery
+# All addresses must be added explicitly for security
+
+[bootstrap]
+
+# SECURITY: Development nodes are EMPTY by default
+# Only add addresses when actually needed for development
+development_nodes = [
+    # Intentionally EMPTY for production security
+    # Add localhost only when developing on local machine
+    # Example (only use locally):
+    # "/ip4/127.0.0.1/tcp/30687/p2p/12D3KooWF8sB8oVzHT7FWbWJBJUzfQ4YHgWDtDEfPbcCpJh6oiEt"
+]
+
+# PRODUCTION: Mainnet bootstrap nodes (community operated)
+# These SHOULD be added when community forms
+mainnet_nodes = [
+    # Add real community nodes here when Erbium launches
+    # Example: "/ip4/X.X.X.X/tcp/30687/p2p/XXXXXXXXXXXXXXXXX"
+    # Requirements: Community trusted, geographically distributed
+]
+
+# TESTING: Testnet bootstrap nodes
+testnet_nodes = [
+    # Add testnet nodes here when testnet is launched
+]
+
+[config]
+# SECURITY: Default DENY for development features
+use_development_nodes = false
+
+# SECURITY: Never allow hardcoded fallbacks
+allow_hardcoded_fallback = false
+
+# Timeout for bootstrap connections (reasonable limit)
+bootstrap_timeout_seconds = 30
+
+# Maximum attempts (DOS protection)
+max_bootstrap_attempts = 5
+
+# SECURITY: Additional security validations
+[security]
+# Panic if no bootstrap config and not in dev mode
+panic_on_missing_config = true
+# Validate all addresses are not localhost
+allow_localhost = false
+# Require minimum X bootstrap nodes for mainnet
+minimum_mainnet_nodes = 3

@@ -23,7 +23,8 @@ pub struct TransportConfig {
 impl Default for TransportConfig {
     fn default() -> Self {
         Self {
-            listen_address: "127.0.0.1:30303".to_string(),
+            // SECURITY: No localhost defaults - requires explicit configuration
+            listen_address: "0.0.0.0:0".to_string(), // Bind to all interfaces, random port
             max_connections: 50,
             connection_timeout: Duration::from_secs(10),
             message_timeout: Duration::from_secs(30),

@@ -21,6 +21,24 @@ pub enum BlockchainError {
     #[error("Network error: {0}")]
     Network(String),
 
+    #[error("Insufficient funds error")]
+    InsufficientFunds,
+
+    #[error("Invalid nonce error")]
+    InvalidNonce,
+
+    #[error("No signatures error")]
+    NoSignatures,
+
+    #[error("Insufficient signatures error")]
+    InsufficientSignatures,
+
+    #[error("Invalid gas estimate error")]
+    InvalidGasEstimate,
+
+    #[error("Template not found error")]
+    TemplateNotFound,
+
     #[error("Storage error: {0}")]
     Storage(String),
 

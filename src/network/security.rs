@@ -459,7 +459,8 @@ mod tests {
         let auth = PeerAuthenticator::new(config);
 
         let peer_id = PeerId::random();
-        let addr: libp2p::Multiaddr = "/ip4/127.0.0.1/tcp/8080".parse().unwrap();
+        // SECURITY: No localhost in production tests
+        let addr: libp2p::Multiaddr = "/ip4/0.0.0.0/tcp/0".parse().unwrap(); // Random external port for tests
 
         // Should return Unknown for new peer
         let trust_level = auth.authenticate_peer(&peer_id, &addr).await.unwrap();

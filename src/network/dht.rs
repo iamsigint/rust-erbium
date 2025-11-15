@@ -192,15 +192,15 @@ pub struct DHT {
     node_id: NodeId,
     buckets: Vec<KBucket>,
     known_nodes: HashSet<NodeId>,
-    pending_queries: HashMap<NodeId, QueryState>,
+    pub(crate) pending_queries: HashMap<NodeId, QueryState>,
 }
 
-#[derive(Debug)]
-struct QueryState {
-    target: NodeId,
-    closest_nodes: Vec<Contact>,
-    active_contacts: HashSet<NodeId>,
-    start_time: Instant,
+#[derive(Debug, Clone)]
+pub(crate) struct QueryState {
+    pub(crate) target: NodeId,
+    pub(crate) closest_nodes: Vec<Contact>,
+    pub(crate) active_contacts: HashSet<NodeId>,
+    pub(crate) start_time: Instant,
 }
 
 impl DHT {

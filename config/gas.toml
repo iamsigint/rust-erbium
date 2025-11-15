@@ -1,0 +1,30 @@
+# Erbium Gas Configuration
+# Economic parameters for transaction execution
+# These values are CRITICAL for network economics and security
+
+[gas]
+
+# Base costs (in gas units)
+base_transaction_gas = 21000
+
+# Per-byte costs
+transfer_gas_per_byte = 68
+
+# Security/verification costs
+signature_verification_gas = 3450
+quantum_proof_gas = 15000
+
+# Cross-chain and advanced features
+cross_chain_gas = 50000
+layer2_gas = 10000
+
+[config]
+# Panic if config file missing (security)
+panic_on_missing_config = true
+
+# Allow development overrides
+allow_development_overrides = false
+
+# Economic safety limits
+max_gas_per_transaction = 10000000
+max_gas_per_block = 50000000
