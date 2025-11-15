@@ -92,14 +92,51 @@ impl NodeManager {
     }
     
     async fn start_rest_api(&mut self) -> Result<()> {
-        // Temporarily disable REST API server for v1.0.0 release
-        log::warn!("REST API server disabled for v1.0.0 release");
+        use crate::api::rest::RestServer;
+
+        let rest_server = RestServer::new(8080)?;
+
+        let handle = tokio::spawn(async move {
+            log::info!("Starting REST API server on port 8080");
+            if let Err(e) = rest_server.start().await {
+                log::error!("REST API server error: {}", e);
+            }
+        });
+
+        self.rest_server_handle = Some(handle);
         Ok(())
     }
     
     async fn start_rpc_api(&mut self) -> Result<()> {
-        // Temporarily disable RPC API server for v1.0.0 release
-        log::warn!("RPC API server disabled for v1.0.0 release");
+        if self.blockchain.is_none() {
+            log::warn!("Cannot start RPC API: blockchain not initialized");
+            return Ok(());
+        }
+        let blockchain = self.blockchain.as_ref().unwrap().clone();
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        self.shutdown_sender = Some(shutdown_tx);
+
+        let handle = tokio::spawn(async move {
+            log::info!("Starting RPC API server on port 8545");
+
+            // Use the full RPC handler with blockchain integration
+            // Load config; for now use default with dev overrides
+            let cfg = crate::node::config::NodeConfig::default();
+            let io = crate::api::rpc::create_rpc_handler(blockchain.clone(), cfg);
+
+            // Create server with graceful shutdown support
+            let server = jsonrpc_http_server::ServerBuilder::new(io)
+                .start_http(&"127.0.0.1:8545".parse().unwrap())
+                .expect("RPC server failed to start");
+
+            // Wait for shutdown signal instead of blocking indefinitely
+            let _ = shutdown_rx.await;
+            log::info!("Shutting down RPC server...");
+            server.close();
+        });
+
+        self.rpc_server_handle = Some(handle);
         Ok(())
     }
     

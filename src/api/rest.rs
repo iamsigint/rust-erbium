@@ -1,4 +1,3 @@
-use warp::Filter;
 use crate::utils::error::BlockchainError;
 use crate::bridges::core::bridge_manager::BridgeManager;
 use crate::core::chain::Blockchain;
@@ -174,54 +173,68 @@ impl RestServer {
         Ok(())
     }
     
-    fn create_routes(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn create_routes(&self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+        use warp::Filter;
+
         let node_info = warp::path("node")
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_node_info);
-        
+
         let chain_info = warp::path("chain")
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_chain_info);
-        
+
         let blocks = warp::path("blocks")
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_blocks);
-        
+
         let block_by_hash = warp::path("blocks")
             .and(warp::path::param::<String>())
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_block_by_hash);
-        
+
         let transactions = warp::path("transactions")
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_transactions);
-        
+
         let transaction_by_hash = warp::path("transactions")
             .and(warp::path::param::<String>())
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_transaction_by_hash);
-        
+
         let send_transaction = warp::path("transactions")
             .and(warp::path::end())
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::send_transaction);
-        
+
         let validators = warp::path("validators")
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_validators);
-        
+
         let health = warp::path("health")
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::health_check);
+
+        // Group core endpoints
+        let core_routes = node_info
+            .or(chain_info)
+            .or(blocks)
+            .or(block_by_hash)
+            .or(transactions)
+            .or(transaction_by_hash)
+            .or(send_transaction)
+            .or(validators)
+            .or(health)
+            .boxed();
 
         // Bridge endpoints
         let bridges = warp::path("bridges")
@@ -229,115 +242,98 @@ impl RestServer {
             .and(warp::get())
             .and_then(Self::get_bridges);
 
-        let bridge_transfers = warp::path("bridges")
-            .and(warp::path("transfers"))
-            .and(warp::path::end())
+        let bridge_transfers = warp::path!("bridges" / "transfers")
             .and(warp::get())
             .and_then(Self::get_bridge_transfers);
 
-        let bridge_transfer_by_id = warp::path("bridges")
-            .and(warp::path("transfers"))
-            .and(warp::path::param::<String>())
-            .and(warp::path::end())
+        let bridge_transfer_by_id = warp::path!("bridges" / "transfers" / String)
             .and(warp::get())
             .and_then(Self::get_bridge_transfer_by_id);
 
-        let initiate_bridge_transfer = warp::path("bridges")
-            .and(warp::path("transfers"))
-            .and(warp::path::end())
+        let initiate_bridge_transfer = warp::path!("bridges" / "transfers")
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::initiate_bridge_transfer);
 
+        let bridge_routes = bridges
+            .or(bridge_transfers)
+            .or(bridge_transfer_by_id)
+            .or(initiate_bridge_transfer)
+            .boxed();
+
         // Governance endpoints
-        let governance_proposals = warp::path("governance")
-            .and(warp::path("proposals"))
-            .and(warp::path::end())
+        let governance_proposals = warp::path!("governance" / "proposals")
             .and(warp::get())
             .and_then(Self::get_governance_proposals);
 
-        let governance_proposal_by_id = warp::path("governance")
-            .and(warp::path("proposals"))
-            .and(warp::path::param::<String>())
-            .and(warp::path::end())
+        let governance_proposal_by_id = warp::path!("governance" / "proposals" / String)
             .and(warp::get())
             .and_then(Self::get_governance_proposal_by_id);
 
-        let create_governance_proposal = warp::path("governance")
-            .and(warp::path("proposals"))
-            .and(warp::path::end())
+        let create_governance_proposal = warp::path!("governance" / "proposals")
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::create_governance_proposal);
 
-        let vote_governance_proposal = warp::path("governance")
-            .and(warp::path("proposals"))
-            .and(warp::path::param::<String>())
-            .and(warp::path("vote"))
-            .and(warp::path::end())
+        let vote_governance_proposal = warp::path!("governance" / "proposals" / String / "vote")
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::vote_governance_proposal);
 
-        let governance_dao = warp::path("governance")
-            .and(warp::path("dao"))
-            .and(warp::path::end())
+        let governance_dao = warp::path!("governance" / "dao")
             .and(warp::get())
             .and_then(Self::get_governance_dao);
 
+        let governance_routes = governance_proposals
+            .or(governance_proposal_by_id)
+            .or(create_governance_proposal)
+            .or(vote_governance_proposal)
+            .or(governance_dao)
+            .boxed();
+
         // Staking endpoints
-        let staking_validators = warp::path("staking")
-            .and(warp::path("validators"))
-            .and(warp::path::end())
+        let staking_validators = warp::path!("staking" / "validators")
             .and(warp::get())
             .and_then(Self::get_staking_validators);
 
-        let staking_validator_by_addr = warp::path("staking")
-            .and(warp::path("validators"))
-            .and(warp::path::param::<String>())
-            .and(warp::path::end())
+        let staking_validator_by_addr = warp::path!("staking" / "validators" / String)
             .and(warp::get())
             .and_then(Self::get_staking_validator_by_addr);
 
-        let staking_delegate = warp::path("staking")
-            .and(warp::path("delegate"))
-            .and(warp::path::end())
+        let staking_delegate = warp::path!("staking" / "delegate")
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::staking_delegate);
 
-        let staking_undelegate = warp::path("staking")
-            .and(warp::path("undelegate"))
-            .and(warp::path::end())
+        let staking_undelegate = warp::path!("staking" / "undelegate")
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::staking_undelegate);
 
-        let staking_rewards = warp::path("staking")
-            .and(warp::path("rewards"))
-            .and(warp::path::param::<String>())
-            .and(warp::path::end())
+        let staking_rewards = warp::path!("staking" / "rewards" / String)
             .and(warp::get())
             .and_then(Self::get_staking_rewards);
 
-        let staking_claim_rewards = warp::path("staking")
-            .and(warp::path("claim-rewards"))
-            .and(warp::path::end())
+        let staking_claim_rewards = warp::path!("staking" / "claim-rewards")
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::staking_claim_rewards);
 
+        let staking_routes = staking_validators
+            .or(staking_validator_by_addr)
+            .or(staking_delegate)
+            .or(staking_undelegate)
+            .or(staking_rewards)
+            .or(staking_claim_rewards)
+            .boxed();
+
         // Contract endpoints
-        let contract_info = warp::path("contracts")
-            .and(warp::path::param::<String>())
+        let contract_info = warp::path!("contracts" / String)
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_contract_info);
 
-        let contract_abi = warp::path("contracts")
-            .and(warp::path::param::<String>())
-            .and(warp::path("abi"))
-            .and(warp::path::end())
+        let contract_abi = warp::path!("contracts" / String / "abi")
             .and(warp::get())
             .and_then(Self::get_contract_abi);
 
@@ -347,58 +343,58 @@ impl RestServer {
             .and(warp::body::json())
             .and_then(Self::deploy_contract);
 
-        let call_contract = warp::path("contracts")
-            .and(warp::path::param::<String>())
-            .and(warp::path("call"))
-            .and(warp::path::end())
+        let call_contract = warp::path!("contracts" / String / "call")
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::call_contract);
 
-        let contract_events = warp::path("contracts")
-            .and(warp::path("events"))
-            .and(warp::path::end())
+        let contract_events = warp::path!("contracts" / "events")
             .and(warp::get())
             .and_then(Self::get_contract_events);
 
+        let contract_routes = contract_info
+            .or(contract_abi)
+            .or(deploy_contract)
+            .or(call_contract)
+            .or(contract_events)
+            .boxed();
+
         // Account endpoints
-        let account_info = warp::path("accounts")
-            .and(warp::path::param::<String>())
+        let account_info = warp::path!("accounts" / String)
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_account_info);
 
-        let account_transactions = warp::path("accounts")
-            .and(warp::path::param::<String>())
-            .and(warp::path("transactions"))
-            .and(warp::path::end())
+        let account_transactions = warp::path!("accounts" / String / "transactions")
             .and(warp::get())
             .and_then(Self::get_account_transactions);
 
+        let account_routes = account_info
+            .or(account_transactions)
+            .boxed();
+
         // Analytics endpoints
-        let analytics_tps = warp::path("analytics")
-            .and(warp::path("tps"))
-            .and(warp::path::end())
+        let analytics_tps = warp::path!("analytics" / "tps")
             .and(warp::get())
             .and_then(Self::get_analytics_tps);
 
-        let analytics_gas_usage = warp::path("analytics")
-            .and(warp::path("gas-usage"))
-            .and(warp::path::end())
+        let analytics_gas_usage = warp::path!("analytics" / "gas-usage")
             .and(warp::get())
             .and_then(Self::get_analytics_gas_usage);
 
-        let analytics_network_health = warp::path("analytics")
-            .and(warp::path("network-health"))
-            .and(warp::path::end())
+        let analytics_network_health = warp::path!("analytics" / "network-health")
             .and(warp::get())
             .and_then(Self::get_analytics_network_health);
 
-        let analytics_bridge_activity = warp::path("analytics")
-            .and(warp::path("bridge-activity"))
-            .and(warp::path::end())
+        let analytics_bridge_activity = warp::path!("analytics" / "bridge-activity")
             .and(warp::get())
             .and_then(Self::get_analytics_bridge_activity);
+
+        let analytics_routes = analytics_tps
+            .or(analytics_gas_usage)
+            .or(analytics_network_health)
+            .or(analytics_bridge_activity)
+            .boxed();
 
         let metrics = warp::path("metrics")
             .and(warp::path::end())
@@ -410,44 +406,17 @@ impl RestServer {
             .allow_headers(vec!["content-type", "authorization"])
             .allow_methods(vec!["GET", "POST", "PUT", "DELETE"]);
 
-        node_info
-            .or(chain_info)
-            .or(blocks)
-            .or(block_by_hash)
-            .or(transactions)
-            .or(transaction_by_hash)
-            .or(send_transaction)
-            .or(validators)
-            .or(health)
-            .or(bridges)
-            .or(bridge_transfers)
-            .or(bridge_transfer_by_id)
-            .or(initiate_bridge_transfer)
-            .or(governance_proposals)
-            .or(governance_proposal_by_id)
-            .or(create_governance_proposal)
-            .or(vote_governance_proposal)
-            .or(governance_dao)
-            .or(staking_validators)
-            .or(staking_validator_by_addr)
-            .or(staking_delegate)
-            .or(staking_undelegate)
-            .or(staking_rewards)
-            .or(staking_claim_rewards)
-            .or(contract_info)
-            .or(contract_abi)
-            .or(deploy_contract)
-            .or(call_contract)
-            .or(contract_events)
-            .or(account_info)
-            .or(account_transactions)
-            .or(analytics_tps)
-            .or(analytics_gas_usage)
-            .or(analytics_network_health)
-            .or(analytics_bridge_activity)
+        core_routes
+            .or(bridge_routes)
+            .or(governance_routes)
+            .or(staking_routes)
+            .or(contract_routes)
+            .or(account_routes)
+            .or(analytics_routes)
             .or(metrics)
             .with(cors)
             .with(warp::log("api"))
+            .boxed()
     }
     
     async fn get_node_info() -> Result<impl warp::Reply, Infallible> {

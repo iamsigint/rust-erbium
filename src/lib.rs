@@ -9,8 +9,7 @@ pub mod network;
 pub mod privacy;
 pub mod vm;
 pub mod storage;
-// Temporarily disable API module for release 1.0.0 due to compilation issues
-// pub mod api;
+pub mod api;
 pub mod governance;
 pub mod bridges;
 pub mod utils;
