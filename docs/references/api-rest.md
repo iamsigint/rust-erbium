@@ -37,123 +37,129 @@ All REST API responses follow this format:
 }
 ```
 
----
+## Analytics
 
-# REST API Endpoints
+### GET /api/v1/analytics/tps
 
-## Node Information
-
-### GET /node
-
-Get basic node information.
+Returns zeroed analytics placeholders until telemetry is implemented.
 
 **Response:**
 ```json
 {
   "success": true,
   "data": {
-    "version": "erbium/1.0.0",
-    "network": "mainnet",
-    "blockHeight": 1000,
-    "syncStatus": "synced",
-    "peers": 16
+    "current_tps": 0,
+    "peak_tps": 0,
+    "average_tps_24h": 0,
+    "average_tps_7d": 0,
+    "transactions_last_block": 0,
+    "gas_used_last_block": 0,
+    "timestamp": 1763272854121
   }
 }
 ```
 
-## Blockchain Information
+### GET /api/v1/analytics/gas-usage
 
-### GET /chain
-
-Get blockchain information.
-
-**Response:**
 ```json
 {
   "success": true,
   "data": {
-    "height": 1000,
-    "network": "erbium",
-    "version": "1.0.0",
-    "timestamp": 1635724800000
+    "average_gas_price": "0",
+    "median_gas_price": "0",
+    "gas_used_24h": "0",
+    "gas_limit_total": "0",
+    "gas_utilization_percent": 0,
+    "expensive_tx_count": 0,
+    "cheap_tx_count": 0
   }
 }
 ```
 
-## Blocks
+### GET /api/v1/analytics/network-health
 
-### GET /blocks
-
-Get recent blocks.
-
-**Query Parameters:**
-- `limit` (optional): Number of blocks to return (default: 10, max: 100)
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "hash": "0xblock1",
-      "height": 1000,
-      "timestamp": 1635724800000,
-      "transactionCount": 10
-    }
-  ]
-}
-```
-
-### GET /blocks/{hash}
-
-Get block by hash.
-
-**Parameters:**
-- `hash`: Block hash (hex string)
-
-**Response:**
 ```json
 {
   "success": true,
   "data": {
-    "hash": "0xblock1",
-    "height": 1000,
-    "timestamp": 1635724800000,
-    "transactions": ["0xtx1", "0xtx2"],
-    "validator": "0xvalidator",
-    "parentHash": "0xparent"
+    "block_time_average": 0,
+    "network_hashrate": "0",
+    "active_validators": 0,
+    "total_stake": "0",
+    "finalized_blocks_24h": 0,
+    "missed_blocks_24h": 0,
+    "network_uptime": 0,
+    "peer_count": 0,
+    "sync_status": "stopped"
   }
 }
 ```
 
+### GET /api/v1/analytics/bridge-activity
+
+```json
+{
+  "success": true,
+  "data": {
+    "total_transfers_24h": 0,
+    "total_volume_24h": "0",
+    "active_bridges": [],
+    "bridge_stats": {},
+    "failed_transfers_24h": 0,
+    "pending_transfers": 0
+  }
+}
+```
+        "type": "Transfer",
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0xe91b31507e84d575a0a12b1bbb98648bd2079011",
+        "amount": 5000000000000000,
+        "fee": 0,
+        ### GET /api/v1/health
+        Health check endpoint.
+        "timestamp": 1763272854119,
+        "blockHash": "19266fa6306f6fa8cb73e04e8cfec9ee21d83f06378f2bb77883eb2fbd0ab082",
+        "blockHeight": 0,
+        "index": 0,
+        ### GET /api/v1/metrics
+        Get comprehensive system metrics (currently zeroed placeholders).
+      }
+    ]
+  }
+}
+            "status": "healthy",
+            "timestamp": 1763272854121
 ## Transactions
 
-### GET /transactions
+### GET /api/v1/transactions
 
-Get recent transactions.
+Get up to 100 most recent confirmed transactions.
 
-**Query Parameters:**
-- `limit` (optional): Number of transactions to return (default: 10, max: 100)
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
+              "head_block": 0,
+              "total_transactions": 0,
+              "total_accounts": 0,
+              "total_contracts": 0,
+              "circulating_supply": "0"
     {
-      "hash": "0xtx1",
-      "from": "0xsender1",
-      "to": "0xrecipient1",
-      "amount": 1000,
-      "fee": 10,
-      "status": "confirmed"
+      "hash": "4d05a538ba4465914e38790cb1fc749af2d770fbf413ad238961127bbfbccffe",
+              "active_peers": 0,
+              "connected_peers": 0,
+              "bytes_received": "0",
+              "bytes_sent": "0"
+      "fee": 0,
+      "nonce": 0,
+              "avg_block_time": 0,
+              "avg_tx_per_block": 0,
+              "gas_utilization": 0,
+              "cpu_usage": 0,
+              "memory_usage": 0
     }
   ]
-}
-```
-
-### GET /transactions/{hash}
-
+              "active_bridges": 0,
+              "pending_transfers": 0,
+              "completed_transfers_24h": 0,
+              "bridge_balance_btc": "0",
+              "bridge_balance_eth": "0"
 Get transaction by hash.
 
 **Parameters:**
@@ -164,20 +170,23 @@ Get transaction by hash.
 {
   "success": true,
   "data": {
-    "hash": "0xtx1",
-    "from": "0xsender",
-    "to": "0xrecipient",
-    "amount": 1000,
-    "fee": 10,
-    "nonce": 1,
-    "timestamp": 1635724800000,
-    "blockHash": "0xblock",
-    "blockHeight": 1000
+    "hash": "4d05a538ba4465914e38790cb1fc749af2d770fbf413ad238961127bbfbccffe",
+    "type": "Transfer",
+    "from": "0x0000000000000000000000000000000000000000",
+    "to": "0xe91b31507e84d575a0a12b1bbb98648bd2079011",
+    "amount": 5000000000000000,
+    "fee": 0,
+    "nonce": 0,
+    "timestamp": 1763272854119,
+    "blockHash": "19266fa6306f6fa8cb73e04e8cfec9ee21d83f06378f2bb77883eb2fbd0ab082",
+    "blockHeight": 0,
+    "index": 0,
+    "status": "confirmed"
   }
 }
 ```
 
-### POST /transactions
+### POST /api/v1/transactions
 
 Send a transaction.
 
@@ -206,521 +215,222 @@ Send a transaction.
 
 ## Validators
 
-### GET /validators
+### GET /api/v1/validators
 
-Get all validators.
+Validators are not yet implemented. The endpoint responds with an empty list.
 
 **Response:**
 ```json
 {
   "success": true,
-  "data": [
-    {
-      "address": "0xvalidator1",
-      "stake": "1000000",
-      "active": true,
-      "performance": "99.5%"
-    }
-  ]
+  "data": []
 }
 ```
 
 ## Governance
 
-### GET /governance/proposals
+Governance endpoints exist but the feature is not yet implemented. Each call returns an error payload with `success` set to `false`.
 
-Get active governance proposals.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "proposal_001",
-      "title": "Increase block gas limit",
-      "description": "Proposal to increase the block gas limit from 8M to 12M",
-      "proposer": "0xproposer1",
-      "status": "Active",
-      "votes_for": 150000,
-      "votes_against": 25000,
-      "start_block": 1000,
-      "end_block": 2000,
-      "created_at": 1635724800000
-    }
-  ]
-}
-```
-
-### GET /governance/proposals/{id}
-
-Get proposal by ID.
-
-**Parameters:**
-- `id`: Proposal ID
+### GET /api/v1/governance/proposals
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "id": "proposal_001",
-    "title": "Increase block gas limit",
-    "description": "Proposal to increase the block gas limit from 8M to 12M",
-    "proposer": "0xproposer1",
-    "status": "Active",
-    "votes_for": 150000,
-    "votes_against": 25000,
-    "quorum_required": 100000,
-    "start_block": 1000,
-    "end_block": 2000,
-    "execution_block": 2500,
-    "actions": [
-      {
-        "type": "UpdateParameter",
-        "parameter": "block_gas_limit",
-        "value": "12000000"
-      }
-    ],
-    "created_at": 1635724800000
-  }
+  "success": false,
+  "data": null,
+  "error": "Governance system not yet implemented in this version"
 }
 ```
 
-### POST /governance/proposals
-
-Create a new governance proposal.
-
-**Request Body:**
-```json
-{
-  "title": "New Proposal",
-  "description": "Proposal description",
-  "actions": [
-    {
-      "type": "UpdateParameter",
-      "parameter": "block_gas_limit",
-      "value": "12000000"
-    }
-  ]
-}
-```
+### GET /api/v1/governance/proposals/{id}
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "proposal_id": "proposal_123",
-    "status": "created",
-    "voting_starts_in": "1 block"
-  }
+  "success": false,
+  "data": null,
+  "error": "Proposal not found"
 }
 ```
 
-### POST /governance/proposals/{id}/vote
-
-Vote on a governance proposal.
-
-**Parameters:**
-- `id`: Proposal ID
-
-**Request Body:**
-```json
-{
-  "voter": "0xvoter_address",
-  "option": "for",
-  "voting_power": 10000
-}
-```
+### POST /api/v1/governance/proposals
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "proposal_id": "proposal_123",
-    "vote_recorded": true,
-    "voting_power": 10000
-  }
+  "success": false,
+  "data": null,
+  "error": "Governance system not yet implemented in this version"
 }
 ```
 
-### GET /governance/dao
-
-Get DAO information.
+### POST /api/v1/governance/proposals/{id}/vote
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "name": "Erbium DAO",
-    "total_members": 150,
-    "total_supply": "1000000000",
-    "circulating_supply": "750000000",
-    "treasury_balance": "50000000",
-    "active_proposals": 3,
-    "passed_proposals": 12,
-    "rejected_proposals": 2,
-    "governance_token": {
-      "symbol": "ERB",
-      "decimals": 18,
-      "contract_address": "0x0000000000000000000000000000000000000000"
-    }
-  }
+  "success": false,
+  "data": null,
+  "error": "Governance system not yet implemented in this version"
+}
+```
+
+### GET /api/v1/governance/dao
+
+**Response:**
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "Governance system not yet implemented in this version"
 }
 ```
 
 ## Staking
 
-**⚠️ Nota: Staking delegation/undelegation It is NOT implemented in the current version..**
+Staking is not available in the current build. Each staking endpoint returns an error payload indicating the feature is disabled.
 
-### GET /staking/validators
+### GET /api/v1/staking/validators
 
-Get all staking validators.
-
-**Response:**
 ```json
 {
-  "success": true,
-  "data": [
-    {
-      "address": "0xvalidator1",
-      "name": "Validator One",
-      "total_stake": "1000000",
-      "self_stake": "100000",
-      "delegators": 25,
-      "commission": "5%",
-      "uptime": "99.8%",
-      "status": "Active",
-      "jailed": false
-    }
-  ]
+  "success": false,
+  "data": null,
+  "error": "Staking system not yet implemented in this version"
 }
 ```
 
-### GET /staking/validators/{address}
+### GET /api/v1/staking/validators/{address}
 
-Get validator by address.
-
-**Parameters:**
-- `address`: Validator address
-
-**Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "address": "0xvalidator1",
-    "name": "Validator One",
-    "description": "High-performance validator node",
-    "website": "https://validator1.erbium.io",
-    "total_stake": "1000000",
-    "self_stake": "100000",
-    "delegators": 25,
-    "commission": "5%",
-    "commission_reward": "50000",
-    "uptime": "99.8%",
-    "blocks_proposed": 1250,
-    "status": "Active",
-    "jailed": false,
-    "unjail_time": null,
-    "delegations": [
-      {
-        "delegator": "0xdelegator1",
-        "amount": "50000",
-        "rewards": "2500"
-      }
-    ]
-  }
+  "success": false,
+  "data": null,
+  "error": "Validator not found"
 }
 ```
 
-### POST /staking/delegate
+### POST /api/v1/staking/delegate
 
-Delegate tokens to a validator.
-
-**Request Body:**
 ```json
 {
-  "delegator": "0xdelegator",
-  "validator": "0xvalidator",
-  "amount": 100000
+  "success": false,
+  "data": null,
+  "error": "Staking delegation not implemented in current version"
 }
 ```
 
-**Response:**
+### POST /api/v1/staking/undelegate
+
 ```json
 {
-  "success": true,
-  "data": {
-    "delegation_id": "delegation_123",
-    "status": "confirmed",
-    "voting_power_granted": 100000
-  }
+  "success": false,
+  "data": null,
+  "error": "Staking undelegation not implemented in current version"
 }
 ```
 
-### POST /staking/undelegate
+### GET /api/v1/staking/rewards/{address}
 
-Undelegate tokens from a validator.
-
-**Request Body:**
 ```json
 {
-  "delegator": "0xdelegator",
-  "validator": "0xvalidator",
-  "amount": 50000
+  "success": false,
+  "data": null,
+  "error": "Staking system not yet implemented in this version"
 }
 ```
 
-**Response:**
+### POST /api/v1/staking/claim-rewards
+
 ```json
 {
-  "success": true,
-  "data": {
-    "status": "initiated",
-    "unbonding_period": "21 days",
-    "completion_time": 1635724800000
-  }
-}
-```
-
-### GET /staking/rewards/{address}
-
-Get staking rewards for an address.
-
-**Parameters:**
-- `address`: Delegator address
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "delegator": "0xdelegator",
-    "total_rewards": "12500",
-    "rewards_by_validator": [
-      {
-        "validator": "0xvalidator1",
-        "rewards": "10000",
-        "commission": "500"
-      },
-      {
-        "validator": "0xvalidator2",
-        "rewards": "2500",
-        "commission": "125"
-      }
-    ],
-    "last_claim": 1635723800000,
-    "next_claim_available": 1635724800000
-  }
-}
-```
-
-### POST /staking/claim-rewards
-
-Claim staking rewards.
-
-**Request Body:**
-```json
-{
-  "delegator": "0xdelegator",
-  "validator": "0xvalidator"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "claimed_amount": "12500",
-    "transaction_hash": "0xclaim_tx_hash",
-    "status": "confirmed"
-  }
+  "success": false,
+  "data": null,
+  "error": "Staking system not yet implemented in this version"
 }
 ```
 
 ## Smart Contracts
 
-### GET /contracts/{address}
+Smart contract support is not implemented. All contract endpoints return an error payload.
 
-Get contract information.
+### GET /api/v1/contracts/{address}
 
-**Parameters:**
-- `address`: Contract address
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "Contract not found"
+}
+```
 
-**Response:**
+### GET /api/v1/contracts/{address}/abi
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "Contract ABI not available"
+}
+```
+
+### POST /api/v1/contracts
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "Smart contract deployment not implemented in this version"
+}
+```
+
+### POST /api/v1/contracts/{address}/call
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "Smart contract calls not implemented in this version"
+}
+```
+
+### GET /api/v1/contracts/events
+
 ```json
 {
   "success": true,
-  "data": {
-    "address": "0xcontract",
-    "creator": "0xcreator",
-    "creation_tx": "0xcreation_tx",
-    "creation_block": 100,
-    "code_size": 24576,
-    "storage_slots": 15,
-    "last_transaction": 1635724800000,
-    "balance": "5000000",
-    "verified": true,
-    "name": "Sample Token",
-    "symbol": "TOK",
-    "decimals": 18
-  }
-}
-```
-
-### GET /contracts/{address}/abi
-
-Get contract ABI.
-
-**Parameters:**
-- `address`: Contract address
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
-      "name": "transfer",
-      "outputs": [{"name": "", "type": "bool"}],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    }
-  ]
-}
-```
-
-### POST /contracts
-
-Deploy a new contract.
-
-**Request Body:**
-```json
-{
-  "bytecode": "0x608060405234801561001057600080fd5b50d3801561001d57600080fd5b50d2801561002a57600080fd5b5061012f806100396000396000f3fe6080604052348015600f57600080fd5b506004361060325760003560e01c80635c60da1b146037575b600080fd5b603d6051565b60405160488463ffffffff1660e01b81526004018060405180830381600087803b15801560...",
-  "constructor_args": [],
-  "gas_limit": 3000000
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "contract_address": "0xnew_contract",
-    "deployer": "0xdeployer",
-    "transaction_hash": "0xdeploy_tx",
-    "gas_used": 1500000
-  }
-}
-```
-
-### POST /contracts/{address}/call
-
-Call a contract function.
-
-**Parameters:**
-- `address`: Contract address
-
-**Request Body:**
-```json
-{
-  "function": "transfer",
-  "args": ["0xrecipient", "1000000000000000000"],
-  "gas_limit": 100000
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "return_value": "0x0000000000000000000000000000000000000000000000000000000000000001",
-    "gas_used": 25000,
-    "logs": [
-      {
-        "address": "0xcontract",
-        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-        "data": "0x000000000000000000000000sender000000000000000000000000recipient00000000000000000000000000000000000000000000000000000000000003e8"
-      }
-    ]
-  }
-}
-```
-
-### GET /contracts/events
-
-Get contract events.
-
-**Query Parameters:**
-- `contract_address` (optional): Filter by contract
-- `event_signature` (optional): Filter by event signature
-- `from_block` (optional): Starting block
-- `to_block` (optional): Ending block
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "contract_address": "0xcontract1",
-      "event_signature": "Transfer(address,address,uint256)",
-      "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-      "data": "0x000000000000000000000000sender000000000000000000000000recipient00000000000000000000000000000000000000000000000000000000000003e8",
-      "block_number": 1000,
-      "transaction_hash": "0xtx1",
-      "log_index": 0
-    }
-  ]
+  "data": []
 }
 ```
 
 ## Accounts
 
-### GET /accounts/{address}
+### GET /api/v1/accounts/{address}
 
-Get account information.
-
-**Parameters:**
-- `address`: Account address
+Fetch live account data from the persistent state. Unknown addresses return a `404`-style error payload.
 
 **Response:**
 ```json
 {
   "success": true,
   "data": {
-    "address": "0xaccount",
-    "balance": "1000000",
-    "nonce": 5,
-    "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-    "storage_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-    "transaction_count": 15,
+    "address": "0xe91b31507e84d575a0a12b1bbb98648bd2079011",
+    "balance": "5000000000000000",
+    "nonce": 0,
+    "code_hash": null,
+    "storage_root": "2e1cfa82b035c26cbbbdae632cea070514eb8b773f616aaeaf668e2f0be8f10d",
+    "transaction_count": 1,
     "is_contract": false,
-    "created_at": 1635723800000,
-    "last_activity": 1635724800000
-  }
+    "created_at": 1763272854121,
+    "last_activity": 1763272854121
+  },
+  "error": null
 }
 ```
 
-### GET /accounts/{address}/transactions
+### GET /api/v1/accounts/{address}/transactions
 
-Get account transaction history.
-
-**Parameters:**
-- `address`: Account address
-
-**Query Parameters:**
-- `limit` (optional): Number of transactions (default: 10, max: 100)
-- `offset` (optional): Pagination offset
+Returns up to 100 of the most recent transactions touching the address.
 
 **Response:**
 ```json
@@ -728,132 +438,69 @@ Get account transaction history.
   "success": true,
   "data": [
     {
-      "hash": "0xtx1",
-      "block_number": 1000,
-      "timestamp": 1635724800000,
-      "from": "0xaccount",
-      "to": "0xrecipient1",
-      "value": "1000",
-      "gas_used": 21000,
-      "status": "success"
+      "hash": "4d05a538ba4465914e38790cb1fc749af2d770fbf413ad238961127bbfbccffe",
+      "type": "Transfer",
+      "from": "0x0000000000000000000000000000000000000000",
+      "to": "0xe91b31507e84d575a0a12b1bbb98648bd2079011",
+      "amount": 5000000000000000,
+      "fee": 0,
+      "nonce": 0,
+      "timestamp": 1763272854119,
+      "blockHash": "19266fa6306f6fa8cb73e04e8cfec9ee21d83f06378f2bb77883eb2fbd0ab082",
+      "blockHeight": 0,
+      "index": 0,
+      "status": "confirmed"
     }
-  ]
+  ],
+  "error": null
 }
 ```
 
 ## Cross-Chain Bridges
 
-### GET /bridges
+### GET /api/v1/bridges
 
-Get available bridges.
-
-**Response:**
 ```json
 {
   "success": true,
-  "data": [
-    {
-      "chain_id": "bitcoin-mainnet",
-      "chain_type": "Bitcoin",
-      "enabled": true,
-      "security_level": "Medium"
-    },
-    {
-      "chain_id": "ethereum-mainnet",
-      "chain_type": "Ethereum",
-      "enabled": true,
-      "security_level": "High"
-    }
-  ]
+  "data": []
 }
 ```
 
-### GET /bridges/transfers
+### GET /api/v1/bridges/transfers
 
-Get bridge transfers.
-
-**Query Parameters:**
-- `status` (optional): Filter by status (pending, completed, failed)
-- `limit` (optional): Number of transfers (default: 10)
-
-**Response:**
 ```json
 {
   "success": true,
-  "data": [
-    {
-      "id": "transfer_001",
-      "source_chain": "bitcoin-mainnet",
-      "target_chain": "erbium-mainnet",
-      "amount": 1000000,
-      "asset_id": "BTC",
-      "status": "Pending",
-      "created_at": 1635724800000
-    }
-  ]
+  "data": []
 }
 ```
 
-### GET /bridges/transfers/{id}
+### GET /api/v1/bridges/transfers/{id}
 
-Get bridge transfer by ID.
-
-**Parameters:**
-- `id`: Transfer ID
-
-**Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "id": "transfer_001",
-    "source_chain": "bitcoin-mainnet",
-    "target_chain": "erbium-mainnet",
-    "amount": 1000000,
-    "asset_id": "BTC",
-    "sender": "0xsender",
-    "recipient": "0xrecipient",
-    "status": "Pending",
-    "fee": 1000,
-    "created_at": 1635724800000,
-    "completed_at": null
-  }
+  "success": false,
+  "data": null,
+  "error": "Bridge transfer not found"
 }
 ```
 
-### POST /bridges/transfers
+### POST /api/v1/bridges/transfers
 
-Initiate a bridge transfer.
-
-**Request Body:**
 ```json
 {
-  "source_chain": "bitcoin-mainnet",
-  "target_chain": "erbium-mainnet",
-  "amount": 1000000,
-  "asset_id": "BTC",
-  "sender": "0xsender",
-  "recipient": "0xrecipient"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "transfer_id": "transfer_123",
-    "status": "initiated",
-    "estimated_completion": "5-10 minutes"
-  }
+  "success": false,
+  "data": null,
+  "error": "Bridge transfers not implemented in this version"
 }
 ```
 
 ## Analytics
 
-### GET /analytics/tps
+### GET /api/v1/analytics/tps
 
-Get current TPS (Transactions Per Second).
+Returns zeroed analytics placeholders until telemetry is implemented.
 
 **Response:**
 ```json
@@ -891,97 +538,68 @@ Get gas usage analytics.
 }
 ```
 
-### GET /analytics/network-health
-
-Get network health metrics.
-
-**Response:**
-```json
-{
+    "current_tps": 0,
+    "peak_tps": 0,
+    "average_tps_24h": 0,
+    "average_tps_7d": 0,
+    "transactions_last_block": 0,
+    "gas_used_last_block": 0,
+    "timestamp": 1763272854121
   "success": true,
   "data": {
     "block_time_average": 15.2,
     "network_hashrate": "1200000000000000",
-    "active_validators": 25,
-    "total_stake": "25000000",
-    "finalized_blocks_24h": 5760,
-    "missed_blocks_24h": 12,
-    "network_uptime": 99.8,
-    "peer_count": 45,
-    "sync_status": "synced"
-  }
-}
-```
+### GET /api/v1/analytics/gas-usage
 
-### GET /analytics/bridge-activity
-
-Get bridge activity analytics.
-
-**Response:**
 ```json
 {
   "success": true,
   "data": {
-    "total_transfers_24h": 1250,
-    "total_volume_24h": "500000000",
-    "active_bridges": ["bitcoin", "ethereum", "polkadot"],
-    "bridge_stats": {
-      "bitcoin": {
-        "transfers": 450,
-        "volume": "150000000",
-        "avg_confirmation_time": 3600
-      },
-      "ethereum": {
-        "transfers": 600,
-        "volume": "250000000",
-        "avg_confirmation_time": 180
-      },
-      "polkadot": {
-        "transfers": 200,
-        "volume": "100000000",
-        "avg_confirmation_time": 120
-      }
-    },
-    "failed_transfers_24h": 5,
-    "pending_transfers": 15
+    "average_gas_price": "0",
+    "median_gas_price": "0",
+    "gas_used_24h": "0",
+    "gas_limit_total": "0",
+    "gas_utilization_percent": 0,
+    "expensive_tx_count": 0,
+    "cheap_tx_count": 0
   }
 }
 ```
 
-## System
+### GET /api/v1/analytics/network-health
 
-### GET /health
-
-Health check endpoint.
-
-**Response:**
 ```json
 {
   "success": true,
   "data": {
-    "status": "healthy",
-    "timestamp": 1635724800000
+    "block_time_average": 0,
+    "network_hashrate": "0",
+    "active_validators": 0,
+    "total_stake": "0",
+    "finalized_blocks_24h": 0,
+    "missed_blocks_24h": 0,
+    "network_uptime": 0,
+    "peer_count": 0,
+    "sync_status": "stopped"
   }
 }
 ```
 
-### GET /metrics
+### GET /api/v1/analytics/bridge-activity
 
-Get comprehensive system metrics.
-
-**Response:**
 ```json
 {
   "success": true,
   "data": {
-    "blockchain": {
-      "head_block": 1500,
-      "total_transactions": 45000,
-      "total_accounts": 1200,
-      "total_contracts": 45,
-      "circulating_supply": "750000000"
-    },
-    "network": {
+    "total_transfers_24h": 0,
+    "total_volume_24h": "0",
+    "active_bridges": [],
+    "bridge_stats": {},
+    "failed_transfers_24h": 0,
+    "pending_transfers": 0
+  }
+}
+```
       "active_peers": 45,
       "connected_peers": 38,
       "bytes_received": "1500000000",
@@ -1194,4 +812,4 @@ go get github.com/erbium/go-sdk
 
 ---
 
-For more information, visit the [Erbium Documentation](https://docs.erbium.io) or join our [Discord Community](https://discord.gg/erbium).
+For more information, visit the [Erbium Documentation](https://docs.erbium.network) or join our [Discord Community](https://discord.gg/D3Wp6epT).
