@@ -68,6 +68,12 @@ mainnet_nodes = []
 # Options: "development", "testnet", "mainnet"
 network_mode = "testnet"
 
+# Use development nodes instead of testnet/mainnet
+use_development_nodes = false
+
+# Allow hardcoded fallback bootstrap nodes if config is empty
+allow_hardcoded_fallback = true
+
 # Connection timeout for bootstrap attempts (seconds)
 bootstrap_timeout_seconds = 30
 
