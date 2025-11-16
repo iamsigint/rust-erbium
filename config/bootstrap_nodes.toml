@@ -9,8 +9,6 @@
 # This file contains bootstrap nodes for DHT peer discovery
 # All addresses must be added explicitly for security
 
-[bootstrap]
-
 # SECURITY: Development nodes are EMPTY by default
 # Only add addresses when actually needed for development
 development_nodes = [

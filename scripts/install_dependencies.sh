@@ -1,5 +1,6 @@
 #!/bin/bash
 # Script para instalar dependências necessárias para compilar o Erbium-Node no Linux
+# Este script instala Rust via rustup automaticamente
 # Execute este script como sudo: sudo ./scripts/install_dependencies.sh
 
 # Verificar se está rodando como root
