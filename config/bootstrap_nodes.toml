@@ -1,0 +1,105 @@
+# ============================================================================
+# Erbium Blockchain - Bootstrap Nodes Configuration
+# ============================================================================
+# 
+# This file contains seed nodes for DHT (Distributed Hash Table) peer discovery.
+# Bootstrap nodes are the initial connection points that help new nodes join
+# the P2P network and discover other peers.
+#
+# SECURITY NOTE: All bootstrap addresses must be explicitly configured.
+#                No hardcoded defaults are allowed for security reasons.
+#
+# ============================================================================
+
+[bootstrap]
+
+# ----------------------------------------------------------------------------
+# Development Nodes (Local Testing)
+# ----------------------------------------------------------------------------
+# Use these for local development and testing on your machine.
+# Should remain EMPTY in production deployments for security.
+#
+# ["", "ip4", "IP", "tcp", "PORT", "p2p", "PEER_ID"]
+#   0    1      2     3      4       5       6
+#
+# Format: "/ip4/<IP>/tcp/<PORT>/p2p/<PEER_ID>"
+# Example: "/ip4/127.0.0.1/tcp/30303/p2p/12D3KooWF8sB8oVzHT7..."
+# ----------------------------------------------------------------------------
+development_nodes = []
+
+
+# ----------------------------------------------------------------------------
+# Testnet Nodes (Public Test Network)
+# ----------------------------------------------------------------------------
+# Add testnet bootstrap nodes here when deploying to test network.
+# These should be reliable nodes run by developers or community.
+#
+# Requirements:
+#   - Stable public IP addresses
+#   - High uptime (24/7 availability)
+#   - Geographically distributed
+# ----------------------------------------------------------------------------
+testnet_nodes = [
+    # Example VPS nodes (replace with your actual peer IDs):
+    # "/ip4/204.216.147.173/tcp/30303/p2p/12D3KooW9e3de1e148e83e945bb24fa35db09c40",
+    # "/ip4/157.137.228.97/tcp/30303/p2p/12D3KooWefbff304a5e24496b94f8bd6b9334778",
+]
+
+
+# ----------------------------------------------------------------------------
+# Mainnet Nodes (Production Network)
+# ----------------------------------------------------------------------------
+# Production bootstrap nodes operated by the community.
+# These are critical infrastructure - choose carefully.
+#
+# Requirements:
+#   - Trusted operators (core team or vetted community members)
+#   - Enterprise-grade hosting (99.9%+ uptime)
+#   - Multiple geographic regions (NA, EU, ASIA)
+#   - DDoS protection enabled
+# ----------------------------------------------------------------------------
+mainnet_nodes = []
+
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+
+[config]
+
+# Which bootstrap node list to use
+# Options: "development", "testnet", "mainnet"
+network_mode = "testnet"
+
+# Use development nodes instead of testnet/mainnet
+use_development_nodes = false
+
+# Allow hardcoded fallback bootstrap nodes if config is empty
+allow_hardcoded_fallback = true
+
+# Connection timeout for bootstrap attempts (seconds)
+bootstrap_timeout_seconds = 30
+
+# Maximum bootstrap connection attempts before giving up
+max_bootstrap_attempts = 5
+
+# Retry delay between failed bootstrap attempts (seconds)
+retry_delay_seconds = 5
+
+
+# ============================================================================
+# Security Settings
+# ============================================================================
+
+[security]
+
+# Require at least one valid bootstrap node to be configured
+# Setting to 'true' prevents accidental deployment without proper config
+require_bootstrap_nodes = true
+
+# Allow development nodes in production (should always be false)
+allow_development_nodes_in_production = false
+# Validate all addresses are not localhost
+allow_localhost = false
+# Require minimum X bootstrap nodes for mainnet
+minimum_mainnet_nodes = 3

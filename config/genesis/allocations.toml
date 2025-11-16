@@ -1,0 +1,25 @@
+# Erbium Genesis Allocations Configuration
+# Este arquivo define as alocações iniciais de tokens no bloco genesis
+
+[genesis]
+timestamp = 1704067200  # 2024-01-01 00:00:00 UTC 
+
+# Initial Validators (Genesis Validators with Stake)
+# These validators are automatically registered at genesis with their stake
+initial_validators = [
+  { address = "0xe91b31507e84d575a0a12b1bbb98648bd2079011", stake = "10000000000000000" }  # 100M ERB staked
+]
+
+initial_balances = [
+  # Founder's reserve (50M ERB - 5% do supply)
+  { address = "0xe91b31507e84d575a0a12b1bbb98648bd2079011", amount = "5000000000000000" },
+
+  # Development Fund (20M ERB - 2% do supply)
+  { address = "0x0000000000000000000000000000000000000000", amount = "2000000000000000" },
+
+  # Ecosystem Fund (20M ERB - 2% do supply)
+  { address = "0x0000000000000000000000000000000000000000", amount = "2000000000000000" },
+
+  # Treasury (10M ERB - 1% do supply)
+  { address = "0x0000000000000000000000000000000000000000", amount = "1000000000000000" }
+]
