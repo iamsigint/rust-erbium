@@ -37,6 +37,7 @@ struct GasConfigData {
     layer2_gas: u64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct GasBehavior {
     panic_on_missing_config: bool,
@@ -73,6 +74,7 @@ pub struct GasCalculation {
     pub total: u64,
 }
 
+#[allow(dead_code)]
 pub struct ErbiumEngine {
     /// Global account state (balances, nonces, etc.)
     account_state: Arc<RwLock<HashMap<Address, Account>>>,
@@ -402,7 +404,7 @@ impl ErbiumEngine {
     /// Contract execution (placeholder for now)
     async fn execute_contract_transaction(
         &self,
-        tx: &MultiLayerTransaction,
+        _tx: &MultiLayerTransaction,
         gas_calc: GasCalculation,
     ) -> Result<ExecutionResult> {
         // TODO: Implement contract execution
@@ -415,6 +417,7 @@ impl ErbiumEngine {
     }
 
     /// Quantum proof validation
+    #[allow(dead_code)]
     async fn validate_quantum_proof(&self, _proof: &crate::crypto::QuantumProof) -> Result<()> {
         // TODO: Implement quantum-resistant signature verification
         // Placeholder for now
@@ -422,36 +425,42 @@ impl ErbiumEngine {
     }
 
     /// ZK proof validation
+    #[allow(dead_code)]
     async fn validate_zk_proof(&self, _proof: &crate::crypto::ZkProof) -> Result<()> {
         // TODO: Implement ZK proof verification
         Ok(())
     }
 
     /// Cross-chain proof validation
+    #[allow(dead_code)]
     async fn validate_cross_chain_proof(&self, _proof: &CrossChainProof) -> Result<()> {
         // TODO: Implement cross-chain proof validation
         Ok(())
     }
 
     /// Layer-2 commit validation
+    #[allow(dead_code)]
     async fn validate_layer2_commit(&self, _commit: &Layer2Commit) -> Result<()> {
         // TODO: Implement Layer-2 channel validation
         Ok(())
     }
 
     /// AI prediction validation
+    #[allow(dead_code)]
     async fn validate_ai_prediction(&self, _prediction: &AiPrediction) -> Result<()> {
         // TODO: Implement AI oracle validation
         Ok(())
     }
 
     /// Temporal commitment validation
+    #[allow(dead_code)]
     async fn validate_temporal_commitment(&self, _commitment: &TemporalCommitment) -> Result<()> {
         // TODO: Implement temporal commitment validation
         Ok(())
     }
 
     /// Gas estimate validation
+    #[allow(dead_code)]
     async fn validate_gas_estimate(&self, _calculations: &GasCalculation) -> bool {
         // TODO: Implement gas estimation validation
         true
@@ -480,6 +489,7 @@ impl ErbiumEngine {
     }
 
     /// Get account nonce
+    #[allow(dead_code)]
     async fn get_account_nonce(&self, address: &Address) -> Result<u64> {
         let accounts = self.account_state.read().await;
         Ok(accounts.get(address).map(|acc| acc.nonce).unwrap_or(0))

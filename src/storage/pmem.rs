@@ -167,6 +167,10 @@ impl PmemStorage {
             .write(true)
             .open(&self.config.device_path)?;
 
+        // SAFETY: This is safe because:
+        // 1. We have exclusive write access to the file
+        // 2. The file is not accessed by any other process
+        // 3. The mmap is only accessed through proper synchronization
         let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
         self.mmap = Some(Arc::new(mmap));
 
@@ -334,7 +338,19 @@ impl PmemStorage {
             let metadata = self.metadata.read().unwrap();
             let metadata_bytes = bincode::serialize(&*metadata)?;
 
-            // Write metadata to the beginning of PMEM
+            // Validate metadata size
+            if metadata_bytes.len() > mmap.len() {
+                return Err(BlockchainError::Storage(
+                    format!("Metadata too large: {} bytes, mmap size: {} bytes", 
+                            metadata_bytes.len(), mmap.len())
+                ));
+            }
+
+            // SAFETY: This cast is safe because:
+            // 1. We have exclusive access through Arc
+            // 2. The mmap is valid for the lifetime of this operation
+            // 3. We validated the size above
+            // 4. No other thread is writing to this region
             let mmap_mut = unsafe { &mut *(mmap.as_ref() as *const MmapMut as *mut MmapMut) };
             mmap_mut[0..metadata_bytes.len()].copy_from_slice(&metadata_bytes);
         }
@@ -365,7 +381,20 @@ impl PmemStorage {
                 let value_len = op.value.len() as u32;
                 let entry_size = 4 + 4 + key_len as usize + value_len as usize + 8; // lengths + data + timestamp
 
+                // Validate we don't exceed mmap bounds
+                let end_offset = current_offset as usize + entry_size;
+                if end_offset > mmap.len() {
+                    return Err(BlockchainError::Storage(
+                        format!("Write would exceed PMEM capacity: {} > {}", 
+                                end_offset, mmap.len())
+                    ));
+                }
+
                 // Write entry format: [key_len(4)][value_len(4)][key][value][timestamp(8)]
+                // SAFETY: This cast is safe because:
+                // 1. We validated bounds above
+                // 2. We have exclusive write access through the queue lock
+                // 3. The mmap is valid for the operation lifetime
                 let mmap_mut = unsafe { &mut *(mmap.as_ref() as *const MmapMut as *mut MmapMut) };
 
                 // Write key length

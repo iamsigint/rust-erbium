@@ -5,7 +5,9 @@ use crate::node::config::NodeConfig;
 use jsonrpc_core::{IoHandler, Result, Value};
 use jsonrpc_derive::rpc;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio::time::timeout;
 
 #[rpc]
 pub trait BlockchainRPC {
@@ -47,6 +49,22 @@ impl BlockchainRPCImpl {
     pub fn new(blockchain: Arc<RwLock<Blockchain>>, config: NodeConfig) -> Self {
         Self { blockchain, config }
     }
+
+    /// Helper to acquire read lock with timeout
+    #[allow(dead_code)]
+    async fn read_blockchain_with_timeout(&self) -> Result<tokio::sync::RwLockReadGuard<'_, Blockchain>> {
+        timeout(Duration::from_secs(5), self.blockchain.read())
+            .await
+            .map_err(|_| jsonrpc_core::Error::internal_error())
+    }
+
+    /// Helper to acquire write lock with timeout
+    #[allow(dead_code)]
+    async fn write_blockchain_with_timeout(&self) -> Result<tokio::sync::RwLockWriteGuard<'_, Blockchain>> {
+        timeout(Duration::from_secs(5), self.blockchain.write())
+            .await
+            .map_err(|_| jsonrpc_core::Error::internal_error())
+    }
 }
 
 impl BlockchainRPC for BlockchainRPCImpl {
@@ -67,17 +85,9 @@ impl BlockchainRPC for BlockchainRPCImpl {
             .try_read()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
 
-        let hash_clean = hash.trim_start_matches("0x");
-        let hash_bytes = hex::decode(hash_clean)
+        // Use Hash::from_hex() which automatically normalizes "0x" prefix
+        let block_hash = crate::core::types::Hash::from_hex(&hash)
             .map_err(|e| jsonrpc_core::Error::invalid_params(format!("Invalid hash: {}", e)))?;
-
-        if hash_bytes.len() != 32 {
-            return Err(jsonrpc_core::Error::invalid_params("Hash must be 32 bytes"));
-        }
-
-        let mut hash_array = [0u8; 32];
-        hash_array.copy_from_slice(&hash_bytes);
-        let block_hash = crate::core::types::Hash::from_bytes(hash_array);
 
         if let Some(block) = blockchain.get_block_by_hash(&block_hash) {
             Ok(Some(serialize_block(block, full_tx)))
@@ -107,17 +117,9 @@ impl BlockchainRPC for BlockchainRPCImpl {
             .try_read()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
 
-        let hash_clean = hash.trim_start_matches("0x");
-        let hash_bytes = hex::decode(hash_clean)
+        // Use Hash::from_hex() which automatically normalizes "0x" prefix
+        let tx_hash = crate::core::types::Hash::from_hex(&hash)
             .map_err(|e| jsonrpc_core::Error::invalid_params(format!("Invalid hash: {}", e)))?;
-
-        if hash_bytes.len() != 32 {
-            return Err(jsonrpc_core::Error::invalid_params("Hash must be 32 bytes"));
-        }
-
-        let mut hash_array = [0u8; 32];
-        hash_array.copy_from_slice(&hash_bytes);
-        let tx_hash = crate::core::types::Hash::from_bytes(hash_array);
 
         if let Some((tx, block_height, tx_index)) = blockchain.get_transaction_by_hash(&tx_hash) {
             // Get block info for context

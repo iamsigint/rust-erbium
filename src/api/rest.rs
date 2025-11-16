@@ -1,14 +1,34 @@
 use crate::bridges::core::bridge_manager::BridgeManager;
 use crate::core::chain::{Blockchain, PersistentBlockchain};
-use crate::core::mempool::{Mempool, MempoolConfig};
-use crate::core::types::{Address, Hash};
+use crate::core::mempool::Mempool;
+use crate::core::types::Address;
 use crate::core::{Block, Transaction};
 use crate::utils::error::BlockchainError;
+use crate::utils::{RateLimiter, RateLimitConfig};
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use warp::http::StatusCode;
+use warp::Filter;
 
+// Custom error for warp rejections
+#[derive(Debug)]
+struct ApiError {
+    message: String,
+}
+
+impl ApiError {
+    fn new(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+        }
+    }
+}
+
+impl warp::reject::Reject for ApiError {}
+
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct TransactionRequest {
     transaction_type: String,
@@ -25,6 +45,7 @@ struct TransactionRequest {
     binding_signature: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct BridgeTransferRequest {
     _source_chain: String,
@@ -35,6 +56,7 @@ struct BridgeTransferRequest {
     _recipient: String,
 }
 
+#[allow(dead_code)]
 fn parse_and_process_transaction(body: serde_json::Value) -> Result<(Transaction, String), BlockchainError> {
     let req: TransactionRequest = serde_json::from_value(body)
         .map_err(|e| BlockchainError::Serialization(format!("Invalid JSON: {}", e)))?;
@@ -139,10 +161,13 @@ fn parse_and_process_transaction(body: serde_json::Value) -> Result<(Transaction
 pub struct RestServer {
     port: u16,
     persistent_blockchain: Option<Arc<RwLock<PersistentBlockchain>>>,
+    #[allow(dead_code)]
     blockchain: Option<Arc<RwLock<Blockchain>>>,
     mempool: Option<Arc<RwLock<Mempool>>>,
     bridge_manager: Option<Arc<RwLock<BridgeManager>>>,
     p2p_network: Option<Arc<RwLock<crate::network::p2p_network::P2PNetwork>>>,
+    #[allow(dead_code)]
+    rate_limiter: Arc<RateLimiter>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -154,6 +179,14 @@ pub struct RestResponse<T> {
 
 impl RestServer {
     pub fn new(port: u16) -> Result<Self, BlockchainError> {
+        // Create rate limiter with default config
+        let rate_limit_config = RateLimitConfig {
+            max_requests: 100, // 100 requests per minute per IP
+            window: std::time::Duration::from_secs(60),
+            enabled: true,
+        };
+        let rate_limiter = Arc::new(RateLimiter::new(rate_limit_config));
+
         Ok(Self {
             port,
             persistent_blockchain: None,
@@ -161,7 +194,45 @@ impl RestServer {
             mempool: None,
             bridge_manager: None,
             p2p_network: None,
+            rate_limiter,
         })
+    }
+
+    /// Create with custom rate limit configuration
+    pub fn with_rate_limit_config(port: u16, rate_limit_config: RateLimitConfig) -> Result<Self, BlockchainError> {
+        let rate_limiter = Arc::new(RateLimiter::new(rate_limit_config));
+
+        Ok(Self {
+            port,
+            persistent_blockchain: None,
+            blockchain: None,
+            mempool: None,
+            bridge_manager: None,
+            p2p_network: None,
+            rate_limiter,
+        })
+    }
+
+    /// Check rate limit for incoming request
+    #[allow(dead_code)]
+    async fn check_rate_limit(&self, addr: Option<SocketAddr>) -> Result<(), (StatusCode, String)> {
+        if let Some(socket_addr) = addr {
+            match self.rate_limiter.check_ip(socket_addr.ip()).await {
+                Ok(()) => Ok(()),
+                Err(retry_after) => {
+                    log::warn!("Rate limit exceeded for IP: {}", socket_addr.ip());
+                    Err((
+                        StatusCode::TOO_MANY_REQUESTS,
+                        format!(
+                            "{{\"error\":\"Rate limit exceeded. Retry after {} seconds\",\"retry_after\":{}}}",
+                            retry_after, retry_after
+                        ),
+                    ))
+                }
+            }
+        } else {
+            Ok(()) // No address means local/test request
+        }
     }
 
     pub fn with_persistent_blockchain(
@@ -199,7 +270,321 @@ impl RestServer {
             self_clone.start_background_mining().await;
         });
 
+        // Build routes
+        let routes = self.build_routes();
+
+        // Start the HTTP server
+        let addr: SocketAddr = ([127, 0, 0, 1], self.port)
+            .try_into()
+            .map_err(|e| BlockchainError::Network(format!("Invalid address: {}", e)))?;
+
+        log::info!("🌐 REST API listening on http://{}", addr);
+        log::info!("📡 Available endpoints:");
+        log::info!("   GET  /api/v1/health");
+        log::info!("   GET  /api/v1/accounts/<address>");
+        log::info!("   GET  /api/v1/blocks/<height_or_hash>");
+        log::info!("   GET  /api/v1/blocks/latest");
+        log::info!("   GET  /api/v1/transactions/<hash>");
+        log::info!("   POST /api/v1/transactions");
+        log::info!("   GET  /api/v1/node/info");
+        log::info!("   GET  /api/v1/node/peers");
+
+        warp::serve(routes).run(addr).await;
+
         Ok(())
+    }
+
+    fn build_routes(
+        &self,
+    ) -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+        let health = warp::path!("api" / "v1" / "health")
+            .and(warp::get())
+            .map(|| warp::reply::json(&serde_json::json!({"status": "healthy"})));
+
+        let account = {
+            let blockchain = self.persistent_blockchain.clone();
+            warp::path!("api" / "v1" / "accounts" / String)
+                .and(warp::get())
+                .and_then(move |address: String| {
+                    let blockchain = blockchain.clone();
+                    async move {
+                        Self::get_account_handler(blockchain, address).await
+                    }
+                })
+        };
+
+        let block = {
+            let blockchain = self.persistent_blockchain.clone();
+            warp::path!("api" / "v1" / "blocks" / String)
+                .and(warp::get())
+                .and_then(move |height_or_hash: String| {
+                    let blockchain = blockchain.clone();
+                    async move {
+                        Self::get_block_handler(blockchain, height_or_hash).await
+                    }
+                })
+        };
+
+        let latest_block = {
+            let blockchain = self.persistent_blockchain.clone();
+            warp::path!("api" / "v1" / "blocks" / "latest")
+                .and(warp::get())
+                .and_then(move || {
+                    let blockchain = blockchain.clone();
+                    async move {
+                        Self::get_latest_block_handler(blockchain).await
+                    }
+                })
+        };
+
+        let transaction = {
+            let blockchain = self.persistent_blockchain.clone();
+            warp::path!("api" / "v1" / "transactions" / String)
+                .and(warp::get())
+                .and_then(move |hash: String| {
+                    let blockchain = blockchain.clone();
+                    async move {
+                        Self::get_transaction_handler(blockchain, hash).await
+                    }
+                })
+        };
+
+        let node_info = {
+            let p2p = self.p2p_network.clone();
+            warp::path!("api" / "v1" / "node" / "info")
+                .and(warp::get())
+                .and_then(move || {
+                    let p2p = p2p.clone();
+                    async move {
+                        Self::get_node_info_handler(p2p).await
+                    }
+                })
+        };
+
+        let node_peers = {
+            let p2p = self.p2p_network.clone();
+            warp::path!("api" / "v1" / "node" / "peers")
+                .and(warp::get())
+                .and_then(move || {
+                    let p2p = p2p.clone();
+                    async move {
+                        Self::get_node_peers_handler(p2p).await
+                    }
+                })
+        };
+
+        let send_transaction = {
+            let mempool = self.mempool.clone();
+            warp::path!("api" / "v1" / "transactions")
+                .and(warp::post())
+                .and(warp::body::json())
+                .and_then(move |body: serde_json::Value| {
+                    let mempool = mempool.clone();
+                    async move {
+                        Self::send_transaction_handler(mempool, body).await
+                    }
+                })
+        };
+
+        health
+            .or(account)
+            .or(block)
+            .or(latest_block)
+            .or(transaction)
+            .or(node_info)
+            .or(node_peers)
+            .or(send_transaction)
+    }
+
+    async fn get_account_handler(
+        blockchain: Option<Arc<RwLock<PersistentBlockchain>>>,
+        address: String,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        let blockchain = blockchain.ok_or_else(|| {
+            warp::reject::custom(ApiError::new("Blockchain not available"))
+        })?;
+
+        let addr = Address::new(address.clone()).map_err(|_| {
+            warp::reject::custom(ApiError::new("Invalid address"))
+        })?;
+
+        let chain = blockchain.read().await;
+        let state = chain.get_state();
+        let balance = state.get_balance(&addr).unwrap_or(0);
+
+        Ok(warp::reply::json(&serde_json::json!({
+            "address": address,
+            "balance": balance,
+        })))
+    }
+
+    async fn get_block_handler(
+        blockchain: Option<Arc<RwLock<PersistentBlockchain>>>,
+        height_or_hash: String,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        let blockchain = blockchain.ok_or_else(|| {
+            warp::reject::custom(ApiError::new("Blockchain not available"))
+        })?;
+
+        let chain = blockchain.read().await;
+
+        let block = if let Ok(height) = height_or_hash.parse::<u64>() {
+            chain.get_block_by_height(height).await.ok().flatten()
+        } else {
+            // Try as hash
+            if let Ok(hash_bytes) = hex::decode(&height_or_hash) {
+                if hash_bytes.len() == 32 {
+                    let mut array = [0u8; 32];
+                    array.copy_from_slice(&hash_bytes);
+                    let hash = crate::core::types::Hash::from_bytes(array);
+                    chain.get_block_by_hash(&hash).await.ok().flatten()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        if let Some(block) = block {
+            Ok(warp::reply::json(&serde_json::json!({
+                "height": block.header.number,
+                "hash": block.hash().to_hex(),
+                "previous_hash": block.header.previous_hash.to_hex(),
+                "timestamp": block.header.timestamp,
+                "validator": block.header.validator,
+                "transactions": block.transactions.len(),
+            })))
+        } else {
+            Err(warp::reject::custom(ApiError::new("Block not found")))
+        }
+    }
+
+    async fn get_latest_block_handler(
+        blockchain: Option<Arc<RwLock<PersistentBlockchain>>>,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        let blockchain = blockchain.ok_or_else(|| {
+            warp::reject::custom(ApiError::new("Blockchain not available"))
+        })?;
+
+        let chain = blockchain.read().await;
+        let height = chain.get_latest_height().await.map_err(|_| {
+            warp::reject::custom(ApiError::new("Failed to get latest height"))
+        })?;
+
+        if let Ok(Some(block)) = chain.get_block_by_height(height).await {
+            Ok(warp::reply::json(&serde_json::json!({
+                "height": block.header.number,
+                "hash": block.hash().to_hex(),
+                "previous_hash": block.header.previous_hash.to_hex(),
+                "timestamp": block.header.timestamp,
+                "validator": block.header.validator,
+                "transactions": block.transactions.len(),
+            })))
+        } else {
+            Err(warp::reject::custom(ApiError::new("Latest block not found")))
+        }
+    }
+
+    async fn get_transaction_handler(
+        blockchain: Option<Arc<RwLock<PersistentBlockchain>>>,
+        hash: String,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        let blockchain = blockchain.ok_or_else(|| {
+            warp::reject::custom(ApiError::new("Blockchain not available"))
+        })?;
+
+        let hash_bytes = hex::decode(&hash).map_err(|_| {
+            warp::reject::custom(ApiError::new("Invalid transaction hash"))
+        })?;
+
+        let chain = blockchain.read().await;
+        if let Ok(Some(tx)) = chain.get_transaction_by_hash(&hash_bytes).await {
+            Ok(warp::reply::json(&serde_json::json!({
+                "hash": tx.hash().to_hex(),
+                "from": tx.from.to_string(),
+                "to": tx.to.to_string(),
+                "amount": tx.amount,
+                "fee": tx.fee,
+                "nonce": tx.nonce,
+                "timestamp": tx.timestamp,
+            })))
+        } else {
+            Err(warp::reject::custom(ApiError::new("Transaction not found")))
+        }
+    }
+
+    async fn get_node_info_handler(
+        p2p: Option<Arc<RwLock<crate::network::p2p_network::P2PNetwork>>>,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        let p2p = p2p.ok_or_else(|| {
+            warp::reject::custom(ApiError::new("P2P network not available"))
+        })?;
+
+        let network = p2p.read().await;
+        let info = network.get_node_info().await.map_err(|_| {
+            warp::reject::custom(ApiError::new("Failed to get node info"))
+        })?;
+
+        Ok(warp::reply::json(&info))
+    }
+
+    async fn get_node_peers_handler(
+        p2p: Option<Arc<RwLock<crate::network::p2p_network::P2PNetwork>>>,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        let p2p = p2p.ok_or_else(|| {
+            warp::reject::custom(ApiError::new("P2P network not available"))
+        })?;
+
+        let network = p2p.read().await;
+        let stats = network.get_stats().await.map_err(|_| {
+            warp::reject::custom(ApiError::new("Failed to get network stats"))
+        })?;
+
+        Ok(warp::reply::json(&stats))
+    }
+
+    async fn send_transaction_handler(
+        mempool: Option<Arc<RwLock<Mempool>>>,
+        body: serde_json::Value,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        log::info!("Received transaction via REST: {:?}", body);
+
+        let mempool = mempool.ok_or_else(|| {
+            warp::reject::custom(ApiError::new("Mempool not available"))
+        })?;
+
+        // Parse transaction from JSON
+        let result = tokio::task::spawn_blocking(move || parse_and_process_transaction(body)).await;
+
+        match result {
+            Ok(Ok((transaction, tx_hash))) => {
+                // Add transaction to mempool
+                mempool.write().await.add_transaction(transaction).await.map_err(|e| {
+                    warp::reject::custom(ApiError::new(&format!("Failed to add transaction: {}", e)))
+                })?;
+
+                log::info!("Transaction {} added to mempool", tx_hash);
+
+                Ok(warp::reply::json(&serde_json::json!({
+                    "success": true,
+                    "transactionHash": tx_hash,
+                    "status": "pending"
+                })))
+            }
+            Ok(Err(e)) => {
+                Ok(warp::reply::json(&serde_json::json!({
+                    "success": false,
+                    "error": e.to_string()
+                })))
+            }
+            Err(e) => {
+                Ok(warp::reply::json(&serde_json::json!({
+                    "success": false,
+                    "error": format!("Internal error: {}", e)
+                })))
+            }
+        }
     }
 
     /// Background mining task - simulates validator mining for development
@@ -226,10 +611,9 @@ impl RestServer {
         };
 
         // Get transactions from mempool (limit to 10 per block for development)
-        let transactions = {
-            let mut mp = mempool.write().await;
-            mp.get_highest_fee_transactions(10, 1024 * 1024)
-        };
+        let mp_guard = mempool.read().await;
+        let transactions = mp_guard.get_highest_fee_transactions(10, 1024 * 1024).await;
+        drop(mp_guard);
 
         if transactions.is_empty() {
             return Ok(());
@@ -259,9 +643,9 @@ impl RestServer {
         chain.add_block(new_block).await?;
 
         // Remove mined transactions from mempool
-        let mut mp = mempool.write().await;
+        let mp_guard = mempool.read().await;
         for tx in &transactions {
-            let _ = mp.remove_transaction(&tx.hash());
+            let _ = mp_guard.remove_transaction(&tx.hash()).await;
         }
 
         log::info!("📦 Block {} mined with {} transactions", latest_height + 1, transactions.len());
@@ -270,6 +654,7 @@ impl RestServer {
     }
 
     /// Real mempool integration - NO simulation of instant mining
+    #[allow(dead_code)]
     async fn send_transaction(&self, body: serde_json::Value) -> Result<RestResponse<serde_json::Value>, BlockchainError> {
         log::info!("Received transaction via REST: {:?}", body);
 
@@ -309,6 +694,7 @@ impl RestServer {
         }
     }
 
+    #[allow(dead_code)]
     fn format_transaction(
         tx: &Transaction,
         block: Option<&Block>,

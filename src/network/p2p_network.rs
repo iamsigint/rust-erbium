@@ -33,6 +33,7 @@ struct BootstrapSection {
     testnet_nodes: Vec<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct BootstrapBehavior {
     use_development_nodes: bool,
@@ -126,6 +127,8 @@ pub struct P2PNetwork {
     peer_discovery: Arc<RwLock<PeerDiscovery>>, // Traditional peer management
     opportunistic_tasks: Arc<RwLock<Vec<JoinHandle<()>>>>,
     opportunistic_shutdown: Arc<RwLock<Option<watch::Sender<bool>>>>,
+    // Node identification
+    local_peer_id: String,  // This node's PeerID for network identification
 }
 
 impl P2PNetwork {
@@ -147,6 +150,9 @@ impl P2PNetwork {
         };
 
         let dht = DHT::new(dht_config);
+        
+        // Generate unique PeerID for this node (deterministic based on node data)
+        let local_peer_id = Self::generate_peer_id(&config);
         let peer_discovery = PeerDiscovery::new(vec![]); // Initialize empty, will populate
 
         Ok(Self {
@@ -161,6 +167,7 @@ impl P2PNetwork {
             peer_discovery: Arc::new(RwLock::new(peer_discovery)),
             opportunistic_tasks: Arc::new(RwLock::new(Vec::new())),
             opportunistic_shutdown: Arc::new(RwLock::new(None)),
+            local_peer_id,
         })
     }
 
@@ -192,8 +199,244 @@ impl P2PNetwork {
         // Start background tasks
         self.start_background_tasks();
 
+        // Log node info on startup
+        log::warn!(
+            "\n\n\
+            ════════════════════════════════════════════════════════════════\n\
+            🆔 NODE PEER ID: {}\n\
+            🌐 Listen Address: {}\n\
+            ════════════════════════════════════════════════════════════════\n\
+            ⚠️  Share this PeerID with other node operators for bootstrap!\n\
+            ⚠️  Add to config/bootstrap_nodes.toml as:\n\
+            \"/ip4/YOUR_PUBLIC_IP/tcp/PORT/p2p/{}\"\n\
+            ════════════════════════════════════════════════════════════════\n\
+            ",
+            self.local_peer_id,
+            self.config.listen_address,
+            self.local_peer_id
+        );
+        
+        // Auto-detect public IP and announce to DHT
+        if let Err(e) = self.auto_announce_to_bootstrap().await {
+            log::warn!("Failed to auto-announce to bootstrap: {}", e);
+        }
+
         log::info!("P2P network started successfully with DHT integration");
         Ok(())
+    }
+    
+    /// Get this node's PeerID
+    pub fn get_peer_id(&self) -> &str {
+        &self.local_peer_id
+    }
+    
+    /// Detect external/public IP address
+    async fn detect_public_ip(&self) -> Option<String> {
+        // Try multiple methods in order of reliability
+        
+        // Method 1: Try STUN server (most reliable for public IP)
+        if let Ok(public_ip) = Self::get_ip_via_stun().await {
+            log::info!("Detected public IP via STUN: {}", public_ip);
+            return Some(public_ip);
+        }
+        
+        // Method 2: Try HTTP IP detection service (fallback)
+        if let Ok(public_ip) = Self::get_ip_via_http().await {
+            log::info!("Detected public IP via HTTP service: {}", public_ip);
+            return Some(public_ip);
+        }
+        
+        // Method 3: Use local IP (for LAN nodes)
+        if let Ok(local_ip) = local_ip() {
+            let ip_str = local_ip.to_string();
+            if !ip_str.starts_with("127.") && !ip_str.starts_with("169.254.") {
+                log::info!("Using local IP address: {}", ip_str);
+                return Some(ip_str);
+            }
+        }
+        
+        log::warn!("Could not determine external IP address");
+        None
+    }
+    
+    /// Get public IP via STUN server
+    async fn get_ip_via_stun() -> Result<String> {
+        use std::net::UdpSocket;
+        use std::time::Duration;
+        
+        // Google's public STUN server
+        let stun_server = "stun.l.google.com:19302";
+        
+        let socket = UdpSocket::bind("0.0.0.0:0")
+            .map_err(|e| BlockchainError::Network(format!("STUN bind failed: {}", e)))?;
+        
+        socket.set_read_timeout(Some(Duration::from_secs(3)))
+            .map_err(|e| BlockchainError::Network(format!("STUN timeout set failed: {}", e)))?;
+        
+        // Simple STUN Binding Request
+        let request = [
+            0x00, 0x01, // Binding Request
+            0x00, 0x00, // Message Length
+            0x21, 0x12, 0xa4, 0x42, // Magic Cookie
+            // 12 bytes Transaction ID (random)
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+        ];
+        
+        socket.send_to(&request, stun_server)
+            .map_err(|e| BlockchainError::Network(format!("STUN send failed: {}", e)))?;
+        
+        let mut buf = [0u8; 1024];
+        let (size, _) = socket.recv_from(&mut buf)
+            .map_err(|e| BlockchainError::Network(format!("STUN recv failed: {}", e)))?;
+        
+        // Parse STUN response (simplified - look for XOR-MAPPED-ADDRESS)
+        for i in 20..size.saturating_sub(8) {
+            if buf[i] == 0x00 && buf[i+1] == 0x20 { // XOR-MAPPED-ADDRESS
+                let port_xor = u16::from_be_bytes([buf[i+6], buf[i+7]]);
+                let port = port_xor ^ 0x2112; // XOR with magic cookie first 2 bytes
+                
+                let ip_bytes = [
+                    buf[i+8] ^ 0x21,
+                    buf[i+9] ^ 0x12,
+                    buf[i+10] ^ 0xa4,
+                    buf[i+11] ^ 0x42,
+                ];
+                
+                let ip = format!("{}.{}.{}.{}", ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
+                log::debug!("STUN detected IP: {}:{}", ip, port);
+                return Ok(ip);
+            }
+        }
+        
+        Err(BlockchainError::Network("STUN response parsing failed".to_string()))
+    }
+    
+    /// Get public IP via HTTP service (fallback)
+    async fn get_ip_via_http() -> Result<String> {
+        // Try multiple services in case one is down
+        let services = [
+            "https://api.ipify.org",
+            "https://icanhazip.com",
+            "https://ifconfig.me/ip",
+        ];
+        
+        for service in &services {
+            if let Ok(response) = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                reqwest::get(*service)
+            ).await {
+                if let Ok(resp) = response {
+                    if let Ok(ip) = resp.text().await {
+                        let ip = ip.trim().to_string();
+                        if ip.parse::<std::net::IpAddr>().is_ok() {
+                            return Ok(ip);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Err(BlockchainError::Network("All HTTP IP services failed".to_string()))
+    }
+    
+    /// Auto-announce this node to bootstrap discovery
+    async fn auto_announce_to_bootstrap(&self) -> Result<()> {
+        // Detect public IP
+        let public_ip = match self.detect_public_ip().await {
+            Some(ip) => ip,
+            None => {
+                log::warn!("Cannot auto-announce: No public IP detected");
+                return Ok(()); // Not an error, just can't announce
+            }
+        };
+        
+        // Parse port from listen address
+        let port = self.config.listen_address
+            .split(':')
+            .last()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(30303);
+        
+        // Create bootstrap address
+        let bootstrap_addr = format!("/ip4/{}/tcp/{}/p2p/{}", public_ip, port, self.local_peer_id);
+        
+        log::warn!(
+            "\n\n\
+            ════════════════════════════════════════════════════════════════\n\
+            🚀 AUTO-DETECTED BOOTSTRAP ADDRESS:\n\
+            ════════════════════════════════════════════════════════════════\n\
+            {}\n\
+            ════════════════════════════════════════════════════════════════\n\
+            ✅ This node is now discoverable!\n\
+            ⚠️  Share this address with peers to join your network\n\
+            ⚠️  Other nodes can add this to their bootstrap_nodes.toml\n\
+            ════════════════════════════════════════════════════════════════\n\
+            ",
+            bootstrap_addr
+        );
+        
+        // Try to announce to DHT
+        let mut dht = self.dht.write().await;
+        
+        // Store our own contact info in DHT
+        let our_node_id = *dht.node_id();
+        
+        // Parse socket address
+        let socket_addr = format!("{}:{}", public_ip, port)
+            .parse::<std::net::SocketAddr>()
+            .map_err(|e| BlockchainError::Network(format!("Invalid socket address: {}", e)))?;
+        
+        let our_contact = crate::network::dht::Contact::new(our_node_id, socket_addr);
+        
+        dht.insert_contact(our_contact);
+        
+        log::info!("Successfully announced to DHT with public IP: {}", public_ip);
+        
+        Ok(())
+    }
+    
+    /// Get comprehensive node information
+    pub async fn get_node_info(&self) -> Result<serde_json::Value> {
+        let blockchain = self.blockchain.read().await;
+        let height = blockchain.get_latest_height().await?;
+        let peers = self.peers.read().await;
+        
+        let genesis_hash = if height > 0 {
+            match blockchain.get_block_by_height(0).await {
+                Ok(Some(block)) => block.hash().to_hex(),
+                _ => "unknown".to_string(),
+            }
+        } else {
+            "not_initialized".to_string()
+        };
+        
+        Ok(serde_json::json!({
+            "peer_id": self.local_peer_id,
+            "listen_address": self.config.listen_address,
+            "genesis_hash": genesis_hash,
+            "block_height": height,
+            "peers_connected": peers.len(),
+            "version": env!("CARGO_PKG_VERSION"),
+            "network_type": if self.config.listen_address.contains("127.0.0.1") { 
+                "local" 
+            } else { 
+                "public" 
+            }
+        }))
+    }
+    
+    /// Generate deterministic PeerID for this node
+    fn generate_peer_id(config: &P2PConfig) -> String {
+        use sha2::{Digest, Sha256};
+        
+        // Generate from listen address and process ID for uniqueness
+        let mut hasher = Sha256::new();
+        hasher.update(config.listen_address.as_bytes());
+        hasher.update(std::process::id().to_le_bytes());
+        
+        let hash = hasher.finalize();
+        // Format like libp2p PeerID: 12D3KooW + base58-style encoding
+        format!("12D3KooW{}", hex::encode(&hash[..16]))
     }
 
     /// Stop the P2P network
@@ -517,10 +760,13 @@ impl P2PNetwork {
 
     /// Handle peer status update
     async fn handle_peer_status(&self, peer_id: &str, height: u64, peer_count: u32) -> Result<()> {
-        let mut peers = self.peers.write().await;
-        if let Some(peer) = peers.get_mut(peer_id) {
-            peer.best_height = height;
-            peer.last_seen = current_timestamp();
+        // Update peer information
+        {
+            let mut peers = self.peers.write().await;
+            if let Some(peer) = peers.get_mut(peer_id) {
+                peer.best_height = height;
+                peer.last_seen = current_timestamp();
+            }
         }
 
         log::debug!(
@@ -529,6 +775,107 @@ impl P2PNetwork {
             height,
             peer_count
         );
+        
+        // Check if we need to sync with this peer
+        let my_height = {
+            let blockchain = self.blockchain.read().await;
+            blockchain.get_latest_height().await?
+        };
+        
+        if height > my_height {
+            log::info!(
+                "Peer {} has height {} (we have {}). Triggering sync...",
+                peer_id,
+                height,
+                my_height
+            );
+            
+            // Trigger synchronization in background using Arc references
+            let blockchain = Arc::clone(&self.blockchain);
+            let peers = Arc::clone(&self.peers);
+            let message_sender = self.message_sender.clone();
+            let peer_id_str = peer_id.to_string();
+            
+            tokio::spawn(async move {
+                if let Err(e) = Self::sync_with_peer_standalone(
+                    &peer_id_str,
+                    blockchain,
+                    peers,
+                    message_sender,
+                ).await {
+                    log::error!("Failed to sync with peer {}: {}", peer_id_str, e);
+                }
+            });
+        }
+        
+        Ok(())
+    }
+    
+    /// Standalone sync function for background spawning
+    async fn sync_with_peer_standalone(
+        peer_id: &str,
+        blockchain: Arc<RwLock<PersistentBlockchain>>,
+        peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
+        message_sender: mpsc::UnboundedSender<NetworkMessage>,
+    ) -> Result<()> {
+        log::info!("Starting blockchain sync with peer {}", peer_id);
+        
+        // Get our current blockchain height
+        let my_height = {
+            let blockchain = blockchain.read().await;
+            blockchain.get_latest_height().await?
+        };
+        
+        // Get peer's blockchain height
+        let peer_height = {
+            let peers = peers.read().await;
+            peers.get(peer_id)
+                .map(|p| p.best_height)
+                .unwrap_or(0)
+        };
+        
+        log::info!(
+            "Sync status: My height = {}, Peer {} height = {}",
+            my_height, peer_id, peer_height
+        );
+        
+        // If peer has more blocks than us, request them
+        if peer_height > my_height {
+            let blocks_to_request = peer_height - my_height;
+            log::info!(
+                "Peer {} is ahead by {} blocks. Requesting blocks {} to {}",
+                peer_id,
+                blocks_to_request,
+                my_height + 1,
+                peer_height
+            );
+            
+            // Request blocks in batches
+            let batch_size = 100u32;
+            let mut current_height = my_height + 1;
+            
+            while current_height <= peer_height {
+                let remaining = (peer_height - current_height + 1) as u32;
+                let count = remaining.min(batch_size);
+                
+                log::debug!("Requesting batch: {} blocks from height {}", count, current_height);
+                
+                let message = NetworkMessage::BlockRequest {
+                    start_height: current_height,
+                    count,
+                };
+                
+                message_sender.send(message).map_err(|_| {
+                    BlockchainError::Network("Failed to send block request".to_string())
+                })?;
+                
+                current_height += count as u64;
+                
+                // Small delay between batches
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        
         Ok(())
     }
 
@@ -952,10 +1299,86 @@ impl P2PNetwork {
 
     /// Add a peer to the network
     pub async fn add_peer(&self, peer_info: PeerInfo) -> Result<()> {
-        let mut peers = self.peers.write().await;
-        peers.insert(peer_info.peer_id.clone(), peer_info);
-        log::info!("Added peer to network");
+        let peer_id = peer_info.peer_id.clone();
+        
+        {
+            let mut peers = self.peers.write().await;
+            peers.insert(peer_id.clone(), peer_info);
+        }
+        
+        log::info!("Added peer {} to network", peer_id);
+        
+        // Automatically attempt to sync with the new peer
+        if let Err(e) = self.sync_with_peer(&peer_id).await {
+            log::warn!("Failed to sync with peer {}: {}", peer_id, e);
+        }
+        
         Ok(())
+    }
+    
+    /// Synchronize blockchain with a specific peer
+    async fn sync_with_peer(&self, peer_id: &str) -> Result<()> {
+        log::info!("Starting blockchain sync with peer {}", peer_id);
+        
+        // Get our current blockchain height
+        let my_height = {
+            let blockchain = self.blockchain.read().await;
+            blockchain.get_latest_height().await?
+        };
+        
+        // Get peer's blockchain height
+        let peer_height = {
+            let peers = self.peers.read().await;
+            peers.get(peer_id)
+                .map(|p| p.best_height)
+                .unwrap_or(0)
+        };
+        
+        log::info!(
+            "Sync status: My height = {}, Peer {} height = {}",
+            my_height, peer_id, peer_height
+        );
+        
+        // If peer has more blocks than us, request them
+        if peer_height > my_height {
+            let blocks_to_request = peer_height - my_height;
+            log::info!(
+                "Peer {} is ahead by {} blocks. Requesting blocks {} to {}",
+                peer_id,
+                blocks_to_request,
+                my_height + 1,
+                peer_height
+            );
+            
+            // Request blocks in batches to avoid overwhelming the network
+            let batch_size = 100u32;
+            let mut current_height = my_height + 1;
+            
+            while current_height <= peer_height {
+                let remaining = (peer_height - current_height + 1) as u32;
+                let count = remaining.min(batch_size);
+                
+                log::debug!("Requesting batch: {} blocks from height {}", count, current_height);
+                self.request_blocks(current_height, count).await?;
+                
+                current_height += count as u64;
+                
+                // Small delay between batches to allow processing
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            
+            Ok(())
+        } else if peer_height < my_height {
+            log::info!(
+                "We are ahead of peer {} by {} blocks. Peer will sync from us.",
+                peer_id,
+                my_height - peer_height
+            );
+            Ok(())
+        } else {
+            log::debug!("Blockchains are at the same height ({})", my_height);
+            Ok(())
+        }
     }
 
     /// Remove a peer from the network

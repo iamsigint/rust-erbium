@@ -1,4 +1,3 @@
-pub mod graphql;
 pub mod rest;
 pub mod rpc;
 pub mod websocket;
@@ -14,8 +13,6 @@ pub struct ApiConfig {
     pub rest_port: u16,
     pub websocket_enabled: bool,
     pub websocket_port: u16,
-    pub graphql_enabled: bool,
-    pub graphql_port: u16,
     pub max_connections: u32,
     pub rate_limit: u32, // requests per minute
 }
@@ -29,8 +26,6 @@ impl Default for ApiConfig {
             rest_port: 8080,
             websocket_enabled: true,
             websocket_port: 8546,
-            graphql_enabled: false, // Disabled by default
-            graphql_port: 8081,
             max_connections: 100,
             rate_limit: 1000,
         }
@@ -81,13 +76,6 @@ impl ApiServer {
             log::info!(
                 "WebSocket server configured for port {}",
                 self.config.websocket_port
-            );
-        }
-
-        if self.config.graphql_enabled {
-            log::info!(
-                "GraphQL server configured for port {}",
-                self.config.graphql_port
             );
         }
 

@@ -36,8 +36,11 @@ impl Hash {
     }
 
     /// Creates a hash from a hexadecimal string
+    /// Accepts both formats: "0xabc..." and "abc..." (adds 0x automatically if needed)
     pub fn from_hex(hex_str: &str) -> Result<Self, hex::FromHexError> {
-        let bytes = hex::decode(hex_str)?;
+        // Normalize: remove 0x prefix if present for decoding
+        let cleaned = hex_str.trim_start_matches("0x");
+        let bytes = hex::decode(cleaned)?;
         if bytes.len() != 32 {
             return Err(hex::FromHexError::InvalidStringLength);
         }
@@ -95,23 +98,48 @@ impl FromStr for Hash {
 pub struct Address(String);
 
 impl Address {
-    /// Creates a new address with basic validation
+    /// Creates a new address with validation and automatic normalization
+    /// Accepts both formats: "0xe91b..." and "e91b..." (adds 0x automatically)
     pub fn new(addr: String) -> Result<Self, AddressError> {
-        if addr.len() != 42 || !addr.starts_with("0x") {
+        // Normalize: add 0x prefix if not present
+        let normalized = if addr.starts_with("0x") {
+            addr
+        } else {
+            format!("0x{}", addr)
+        };
+
+        // Validate length (42 chars = "0x" + 40 hex chars)
+        if normalized.len() != 42 {
             return Err(AddressError::InvalidFormat);
         }
 
-        // Basic hex validation
-        if hex::decode(&addr[2..]).is_err() {
+        // Validate hex characters
+        if hex::decode(&normalized[2..]).is_err() {
             return Err(AddressError::InvalidHex);
         }
 
-        Ok(Address(addr))
+        Ok(Address(normalized))
     }
 
-    /// Creates an address without validation (use carefully)
+    /// Creates an address without validation
+    /// WARNING: Only use this in tests or with known-valid addresses
+    /// For production code, use Address::new() to validate inputs
+    #[cfg(test)]
     pub fn new_unchecked(addr: String) -> Self {
         Address(addr)
+    }
+
+    /// Creates an address without validation for internal use only
+    /// This is for system addresses that are hardcoded and known to be valid
+    #[doc(hidden)]
+    pub fn new_system_unchecked(addr: String) -> Self {
+        debug_assert!(addr.len() == 42 && addr.starts_with("0x"), "System address must be valid");
+        Address(addr)
+    }
+
+    /// Zero address constant
+    pub fn zero() -> Self {
+        Address("0x0000000000000000000000000000000000000000".to_string())
     }
 
     /// Returns address as string slice
@@ -147,15 +175,19 @@ impl fmt::Display for Address {
     }
 }
 
-impl From<String> for Address {
-    fn from(s: String) -> Self {
-        Address::new_unchecked(s)
+impl TryFrom<String> for Address {
+    type Error = AddressError;
+    
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Address::new(s)
     }
 }
 
-impl From<&str> for Address {
-    fn from(s: &str) -> Self {
-        Address::new_unchecked(s.to_string())
+impl TryFrom<&str> for Address {
+    type Error = AddressError;
+    
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Address::new(s.to_string())
     }
 }
 
@@ -349,10 +381,22 @@ mod tests {
         let data = b"hello world";
         let hash = Hash::new(data);
 
-        // Test hex conversion
+        // Test hex conversion with 0x prefix
         let hex_str = hash.to_hex();
         let hash_from_hex = Hash::from_hex(&hex_str).unwrap();
         assert_eq!(hash, hash_from_hex);
+
+        // Test hex parsing WITH 0x prefix
+        let hex_with_prefix = format!("0x{}", hex_str);
+        let hash_with_prefix = Hash::from_hex(&hex_with_prefix).unwrap();
+        assert_eq!(hash, hash_with_prefix);
+
+        // Test hex parsing WITHOUT 0x prefix
+        let hash_without_prefix = Hash::from_hex(&hex_str).unwrap();
+        assert_eq!(hash, hash_without_prefix);
+
+        // Verify both formats produce same result
+        assert_eq!(hash_with_prefix, hash_without_prefix);
 
         // Test zero hash
         let zero_hash = Hash::zero();
@@ -366,18 +410,32 @@ mod tests {
 
     #[test]
     fn test_address_validation() {
-        // Valid address
-        let valid_addr = "0x742d35Cc6634C0532925a3b8D4a5b1a4b6c6d7e8";
+        // Valid address with 0x prefix (example address for testing)
+        let valid_addr = "0x1234567890123456789012345678901234567890";
         let address = Address::new(valid_addr.to_string()).unwrap();
         assert_eq!(address.as_str(), valid_addr);
 
-        // Invalid format
+        // Valid address WITHOUT 0x prefix - should be normalized automatically
+        let addr_without_prefix = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
+        let address_normalized = Address::new(addr_without_prefix.to_string()).unwrap();
+        assert_eq!(address_normalized.as_str(), "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
+
+        // Verify both formats produce the same result
+        let with_prefix = Address::new("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd".to_string()).unwrap();
+        let without_prefix = Address::new("abcdefabcdefabcdefabcdefabcdefabcdefabcd".to_string()).unwrap();
+        assert_eq!(with_prefix, without_prefix);
+
+        // Invalid format (non-hex characters)
         let invalid_addr = "invalid";
         assert!(Address::new(invalid_addr.to_string()).is_err());
 
         // Invalid length
         let short_addr = "0x1234";
         assert!(Address::new(short_addr.to_string()).is_err());
+
+        // Invalid length without prefix
+        let short_addr_no_prefix = "1234";
+        assert!(Address::new(short_addr_no_prefix.to_string()).is_err());
     }
 
     #[test]

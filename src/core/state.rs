@@ -45,7 +45,7 @@ impl State {
             cache_misses: 0,
         };
         // Faucet for dev: pre-fund sender used in examples
-        let faucet_addr = super::types::Address::new_unchecked(
+        let faucet_addr = super::types::Address::new_system_unchecked(
             "0x0000000000000000000000000000000000000001".to_string(),
         );
         s.accounts.insert(
@@ -80,7 +80,7 @@ impl State {
         s.load_accounts_from_database().await?;
 
         // Faucet for dev: pre-fund sender used in examples (only if not exists)
-        let faucet_addr = super::types::Address::new_unchecked(
+        let faucet_addr = super::types::Address::new_system_unchecked(
             "0x0000000000000000000000000000000000000001".to_string(),
         );
         if !s.accounts.contains_key(&faucet_addr) {

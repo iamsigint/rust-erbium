@@ -8,6 +8,14 @@ use crate::utils::error::{BlockchainError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// CRITICAL: Expected genesis block hash for network consensus
+/// This MUST match across all nodes or they won't synchronize
+/// Computed from deterministic genesis with config/genesis/allocations.toml
+/// 
+/// ⚠️  TO UPDATE: Run node once, check logs for genesis hash, update this constant
+/// ⚠️  If you change genesis config, this MUST be updated!
+pub const EXPECTED_GENESIS_HASH: &str = "PLACEHOLDER_UPDATE_AFTER_FIRST_RUN";
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +81,7 @@ impl Blockchain {
         // Tentar ler configuração do genesis
         let genesis_config_path = "config/genesis/allocations.toml";
         log::info!(
-            "Tentando carregar configuração genesis de: {}",
+            "Trying to load genesis configuration of: {}",
             genesis_config_path
         );
 
@@ -90,9 +98,7 @@ impl Blockchain {
                             );
 
                             // Criar endereço do sistema para as alocações genesis
-                            let system_address = Address::new_unchecked(
-                                "0x0000000000000000000000000000000000000000".to_string(),
-                            );
+                            let system_address = Address::zero();
 
                             // Criar transações para cada alocação
                             for (i, allocation) in
@@ -206,11 +212,54 @@ impl Blockchain {
                 ));
             }
         } else {
-            // This is the genesis block
+            // This is the genesis block - VALIDATE IT!
             if block.header.number != 0 {
                 return Err(BlockchainError::InvalidBlock(
                     "Invalid genesis block number".to_string(),
                 ));
+            }
+            
+            // CRITICAL: Validate genesis hash matches expected
+            if EXPECTED_GENESIS_HASH != "PLACEHOLDER_UPDATE_AFTER_FIRST_RUN" {
+                let block_hash = block.hash().to_hex();
+                if block_hash != EXPECTED_GENESIS_HASH {
+                    log::error!(
+                        "\n\n❌ GENESIS BLOCK MISMATCH! ❌\n\
+                         Expected: {}\n\
+                         Got:      {}\n\
+                         This node is on a DIFFERENT NETWORK!\n",
+                        EXPECTED_GENESIS_HASH,
+                        block_hash
+                    );
+                    return Err(BlockchainError::InvalidBlock(
+                        format!(
+                            "Genesis block hash mismatch. Network incompatibility. Expected: {}, Got: {}",
+                            EXPECTED_GENESIS_HASH,
+                            block_hash
+                        )
+                    ));
+                }
+                log::info!("✅ Genesis block validated: {}", block_hash);
+            } else {
+                // First run - log the genesis hash for administrator
+                let genesis_hash = block.hash().to_hex();
+                log::warn!(
+                    "\n\n\
+                    ═══════════════════════════════════════════════════════════════\n\
+                    ⚠️  GENESIS HASH DETECTED - ACTION REQUIRED ⚠️\n\
+                    ═══════════════════════════════════════════════════════════════\n\
+                    \n\
+                    Update EXPECTED_GENESIS_HASH in src/core/chain.rs:\n\
+                    \n\
+                    pub const EXPECTED_GENESIS_HASH: &str = \"{}\";\n\
+                    \n\
+                    ⚠️  ALL nodes in the network MUST use this SAME hash!\n\
+                    ⚠️  Share this hash with other node operators!\n\
+                    \n\
+                    ═══════════════════════════════════════════════════════════════\n\
+                    ",
+                    genesis_hash
+                );
             }
         }
 

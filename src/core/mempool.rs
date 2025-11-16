@@ -85,35 +85,48 @@ pub struct MempoolStats {
     pub pending_by_account: HashMap<Address, usize>,
 }
 
-/// Transaction pool for pending transactions
-pub struct Mempool {
+/// Inner mempool data structure
+struct MempoolInner {
     config: MempoolConfig,
     transactions: HashMap<Hash, MempoolEntry>,
     by_fee: BTreeMap<(u64, Hash), Hash>, // (fee_per_byte, hash) -> hash for ordering
     by_account: HashMap<Address, HashSet<Hash>>, // Account -> transaction hashes
-    state: Arc<RwLock<State>>,
     total_size_bytes: usize,
+}
+
+/// Transaction pool for pending transactions
+/// Uses Arc<RwLock<>> internally for safe concurrent access
+pub struct Mempool {
+    inner: Arc<RwLock<MempoolInner>>,
+    state: Arc<RwLock<State>>,
 }
 
 impl Mempool {
     /// Create new mempool
     pub fn new(config: MempoolConfig, state: Arc<RwLock<State>>) -> Self {
-        let mempool = Self {
+        let cleanup_interval = config.cleanup_interval;
+        let inner = Arc::new(RwLock::new(MempoolInner {
             config,
             transactions: HashMap::new(),
             by_fee: BTreeMap::new(),
             by_account: HashMap::new(),
-            state,
             total_size_bytes: 0,
+        }));
+
+        let mempool = Self {
+            inner: Arc::clone(&inner),
+            state,
         };
 
-        // Start cleanup task
-        let mempool_clone = mempool.clone();
+        // Start cleanup task with proper Arc sharing (no Clone trait needed)
+        let inner_clone = Arc::clone(&inner);
+        let state_clone = Arc::clone(&mempool.state);
         tokio::spawn(async move {
-            let mut interval = time::interval(mempool_clone.config.cleanup_interval);
+            let mut interval = time::interval(cleanup_interval);
             loop {
                 interval.tick().await;
-                if let Err(e) = mempool_clone.cleanup_expired().await {
+                let mut inner_guard = inner_clone.write().await;
+                if let Err(e) = Self::cleanup_expired_internal(&mut inner_guard, &state_clone).await {
                     log::error!("Mempool cleanup error: {}", e);
                 }
             }
@@ -123,130 +136,109 @@ impl Mempool {
     }
 
     /// Add transaction to mempool
-    pub async fn add_transaction(&mut self, transaction: Transaction) -> Result<()> {
+    pub async fn add_transaction(&self, transaction: Transaction) -> Result<()> {
         let tx_hash = transaction.hash();
 
+        // Validate transaction
+        self.validate_transaction(&transaction).await?;
+
+        let mut inner = self.inner.write().await;
+        
         // Check if already exists
-        if self.transactions.contains_key(&tx_hash) {
+        if inner.transactions.contains_key(&tx_hash) {
             return Err(BlockchainError::InvalidTransaction(
                 "Transaction already in mempool".to_string(),
             ));
         }
 
-        // Validate transaction
-        self.validate_transaction(&transaction).await?;
-
         // Check size limits
         let entry = MempoolEntry::new(transaction);
-        if self.total_size_bytes + entry.size_bytes > self.config.max_size_bytes {
+        if inner.total_size_bytes + entry.size_bytes > inner.config.max_size_bytes {
             return Err(BlockchainError::InvalidTransaction(
                 "Mempool full".to_string(),
             ));
         }
 
-        if self.transactions.len() >= self.config.max_size {
+        if inner.transactions.len() >= inner.config.max_size {
             // Remove lowest fee transaction
-            self.remove_lowest_fee_transaction()?;
+            Self::remove_lowest_fee_transaction_internal(&mut inner)?;
         }
 
         // Check account limits
         let account_key = entry.transaction.from.clone();
+        
+        // First, check if we need to remove oldest transaction
         let should_remove_oldest = {
-            let account_txs = self
-                .by_account
-                .entry(account_key.clone())
-                .or_insert(HashSet::new());
-            if account_txs.len() >= self.config.max_replacements {
-                // Find oldest transaction from this account
-                account_txs
-                    .iter()
-                    .min_by_key(|hash| {
-                        self.transactions
-                            .get(hash)
-                            .map(|e| e.received_at)
-                            .unwrap_or(u64::MAX)
-                    })
-                    .cloned()
+            if let Some(account_txs) = inner.by_account.get(&account_key) {
+                if account_txs.len() >= inner.config.max_replacements {
+                    // Find oldest transaction from this account
+                    account_txs
+                        .iter()
+                        .min_by_key(|hash| {
+                            inner.transactions
+                                .get(hash)
+                                .map(|e| e.received_at)
+                                .unwrap_or(u64::MAX)
+                        })
+                        .cloned()
+                } else {
+                    None
+                }
             } else {
                 None
             }
         };
 
         if let Some(oldest_hash) = should_remove_oldest {
-            self.remove_transaction(&oldest_hash)?;
+            Self::remove_transaction_internal(&mut inner, &oldest_hash)?;
         }
 
         // Add transaction
-        self.transactions.insert(tx_hash, entry.clone());
-        self.by_fee.insert((entry.fee_per_byte, tx_hash), tx_hash);
-        self.by_account
+        inner.transactions.insert(tx_hash, entry.clone());
+        inner.by_fee.insert((entry.fee_per_byte, tx_hash), tx_hash);
+        inner.by_account
             .entry(account_key)
-            .or_insert(HashSet::new())
+            .or_insert_with(HashSet::new)
             .insert(tx_hash);
-        self.total_size_bytes += entry.size_bytes;
+        inner.total_size_bytes += entry.size_bytes;
 
         log::debug!("Added transaction {} to mempool", tx_hash.to_hex());
         Ok(())
     }
 
     /// Remove transaction from mempool
-    pub fn remove_transaction(&mut self, tx_hash: &Hash) -> Result<()> {
-        if let Some(entry) = self.transactions.remove(tx_hash) {
-            self.by_fee.remove(&(entry.fee_per_byte, *tx_hash));
-            self.total_size_bytes -= entry.size_bytes;
-
-            // Remove from account tracking
-            if let Some(account_txs) = self.by_account.get_mut(&entry.transaction.from) {
-                account_txs.remove(tx_hash);
-                if account_txs.is_empty() {
-                    self.by_account.remove(&entry.transaction.from);
-                }
-            }
-
-            // Remove dependencies
-            for dep_hash in &entry.dependencies {
-                if let Some(dep_entry) = self.transactions.get_mut(dep_hash) {
-                    dep_entry.dependents.remove(tx_hash);
-                }
-            }
-
-            // Remove dependents
-            for dep_hash in &entry.dependents {
-                if let Some(dep_entry) = self.transactions.get_mut(dep_hash) {
-                    dep_entry.dependencies.remove(tx_hash);
-                }
-            }
-
-            log::debug!("Removed transaction {} from mempool", tx_hash.to_hex());
-        }
-
-        Ok(())
+    pub async fn remove_transaction(&self, tx_hash: &Hash) -> Result<()> {
+        let mut inner = self.inner.write().await;
+        Self::remove_transaction_internal(&mut inner, tx_hash)
     }
 
     /// Get transaction by hash
-    pub fn get_transaction(&self, tx_hash: &Hash) -> Option<&Transaction> {
-        self.transactions
+    pub async fn get_transaction(&self, tx_hash: &Hash) -> Option<Transaction> {
+        let inner = self.inner.read().await;
+        inner.transactions
             .get(tx_hash)
-            .map(|entry| &entry.transaction)
+            .map(|entry| entry.transaction.clone())
     }
 
     /// Check if transaction exists in mempool
-    pub fn contains_transaction(&self, tx_hash: &Hash) -> bool {
-        self.transactions.contains_key(tx_hash)
+    pub async fn contains_transaction(&self, tx_hash: &Hash) -> bool {
+        let inner = self.inner.read().await;
+        inner.transactions.contains_key(tx_hash)
     }
 
     /// Get highest fee transactions for block creation
-    pub fn get_highest_fee_transactions(
+    pub async fn get_highest_fee_transactions(
         &self,
         max_count: usize,
         max_size: usize,
     ) -> Vec<Transaction> {
+        let inner = self.inner.read().await;
         let mut result = Vec::new();
         let mut current_size = 0;
 
         // Get transactions ordered by fee (highest first)
-        for (_, tx_hash) in self.by_fee.iter().rev() {
-            if let Some(entry) = self.transactions.get(tx_hash) {
+        for (_, tx_hash) in inner.by_fee.iter().rev() {
+            if let Some(entry) = inner.transactions.get(tx_hash) {
                 if result.len() >= max_count || current_size + entry.size_bytes > max_size {
                     break;
                 }
@@ -260,22 +252,24 @@ impl Mempool {
     }
 
     /// Get transactions for a specific account
-    pub fn get_account_transactions(&self, account: &Address) -> Vec<&Transaction> {
-        self.by_account
+    pub async fn get_account_transactions(&self, account: &Address) -> Vec<Transaction> {
+        let inner = self.inner.read().await;
+        inner.by_account
             .get(account)
             .map(|tx_hashes| {
                 tx_hashes
                     .iter()
-                    .filter_map(|hash| self.transactions.get(hash))
-                    .map(|entry| &entry.transaction)
+                    .filter_map(|hash| inner.transactions.get(hash))
+                    .map(|entry| entry.transaction.clone())
                     .collect()
             })
             .unwrap_or_default()
     }
 
     /// Get mempool statistics
-    pub fn get_stats(&self) -> MempoolStats {
-        let mut fee_per_byte_values: Vec<u64> = self
+    pub async fn get_stats(&self) -> MempoolStats {
+        let inner = self.inner.read().await;
+        let mut fee_per_byte_values: Vec<u64> = inner
             .transactions
             .values()
             .map(|entry| entry.fee_per_byte)
@@ -292,15 +286,15 @@ impl Mempool {
             (min, max, avg)
         };
 
-        let pending_by_account = self
+        let pending_by_account = inner
             .by_account
             .iter()
             .map(|(account, txs)| (account.clone(), txs.len()))
             .collect();
 
         MempoolStats {
-            total_transactions: self.transactions.len(),
-            total_size_bytes: self.total_size_bytes,
+            total_transactions: inner.transactions.len(),
+            total_size_bytes: inner.total_size_bytes,
             average_fee_per_byte: avg_fee,
             min_fee_per_byte: min_fee,
             max_fee_per_byte: max_fee,
@@ -309,11 +303,12 @@ impl Mempool {
     }
 
     /// Clear all transactions
-    pub fn clear(&mut self) {
-        self.transactions.clear();
-        self.by_fee.clear();
-        self.by_account.clear();
-        self.total_size_bytes = 0;
+    pub async fn clear(&self) {
+        let mut inner = self.inner.write().await;
+        inner.transactions.clear();
+        inner.by_fee.clear();
+        inner.by_account.clear();
+        inner.total_size_bytes = 0;
         log::info!("Mempool cleared");
     }
 
@@ -321,6 +316,8 @@ impl Mempool {
     async fn validate_transaction(&self, transaction: &Transaction) -> Result<()> {
         // Basic structure validation
         crate::core::validate_transaction_structure(transaction)?;
+
+        let inner = self.inner.read().await;
 
         // Check minimum fee
         let tx_size = bincode::serialize(transaction).unwrap_or_default().len();
@@ -330,10 +327,10 @@ impl Mempool {
             0
         };
 
-        if fee_per_byte < self.config.min_fee_per_byte {
+        if fee_per_byte < inner.config.min_fee_per_byte {
             return Err(BlockchainError::InvalidTransaction(format!(
                 "Fee too low: {} per byte, minimum: {}",
-                fee_per_byte, self.config.min_fee_per_byte
+                fee_per_byte, inner.config.min_fee_per_byte
             )));
         }
 
@@ -353,9 +350,9 @@ impl Mempool {
 
         // Check balance (including pending transactions)
         let mut total_pending = 0u64;
-        if let Some(account_txs) = self.by_account.get(&transaction.from) {
+        if let Some(account_txs) = inner.by_account.get(&transaction.from) {
             for tx_hash in account_txs {
-                if let Some(entry) = self.transactions.get(tx_hash) {
+                if let Some(entry) = inner.transactions.get(tx_hash) {
                     if entry.transaction.nonce == transaction.nonce {
                         return Err(BlockchainError::InvalidTransaction(
                             "Nonce already used in mempool".to_string(),
@@ -379,64 +376,89 @@ impl Mempool {
         Ok(())
     }
 
-    /// Remove lowest fee transaction when mempool is full
-    fn remove_lowest_fee_transaction(&mut self) -> Result<()> {
-        if let Some((_, tx_hash)) = self.by_fee.iter().next() {
-            let hash_to_remove = *tx_hash; // Copy the hash
-            self.remove_transaction(&hash_to_remove)?;
-        }
-        Ok(())
-    }
-
-    /// Clean up expired transactions
-    async fn cleanup_expired(&self) -> Result<()> {
-        let mut to_remove = Vec::new();
-
-        for (tx_hash, entry) in &self.transactions {
-            if entry.is_expired(self.config.max_transaction_age) {
-                to_remove.push(*tx_hash);
-            }
-        }
-
-        // Note: In a real implementation, we'd need mutable access here
-        // For now, this is just a placeholder for the cleanup logic
-        if !to_remove.is_empty() {
-            log::debug!("Would remove {} expired transactions", to_remove.len());
-        }
-
-        Ok(())
-    }
-
     /// Get all pending transactions
-    pub fn get_all_transactions(&self) -> Vec<&Transaction> {
-        self.transactions
+    pub async fn get_all_transactions(&self) -> Vec<Transaction> {
+        let inner = self.inner.read().await;
+        inner.transactions
             .values()
-            .map(|entry| &entry.transaction)
+            .map(|entry| entry.transaction.clone())
             .collect()
     }
 
     /// Get transaction count
-    pub fn size(&self) -> usize {
-        self.transactions.len()
+    pub async fn size(&self) -> usize {
+        let inner = self.inner.read().await;
+        inner.transactions.len()
     }
 
     /// Check if mempool is empty
-    pub fn is_empty(&self) -> bool {
-        self.transactions.is_empty()
+    pub async fn is_empty(&self) -> bool {
+        let inner = self.inner.read().await;
+        inner.transactions.is_empty()
     }
 }
 
-impl Clone for Mempool {
-    fn clone(&self) -> Self {
-        // Note: This is a simplified clone that doesn't copy the cleanup task
-        Self {
-            config: self.config.clone(),
-            transactions: self.transactions.clone(),
-            by_fee: self.by_fee.clone(),
-            by_account: self.by_account.clone(),
-            state: Arc::clone(&self.state),
-            total_size_bytes: self.total_size_bytes,
+// Clone removed to prevent race conditions. Use Arc<RwLock<>> pattern instead.
+
+impl Mempool {
+    /// Internal method for removing transaction (requires lock already held)
+    fn remove_transaction_internal(inner: &mut MempoolInner, tx_hash: &Hash) -> Result<()> {
+        if let Some(entry) = inner.transactions.remove(tx_hash) {
+            inner.by_fee.remove(&(entry.fee_per_byte, *tx_hash));
+            inner.total_size_bytes -= entry.size_bytes;
+
+            // Remove from account tracking
+            if let Some(account_txs) = inner.by_account.get_mut(&entry.transaction.from) {
+                account_txs.remove(tx_hash);
+                if account_txs.is_empty() {
+                    inner.by_account.remove(&entry.transaction.from);
+                }
+            }
+
+            // Remove dependencies
+            for dep_hash in &entry.dependencies {
+                if let Some(dep_entry) = inner.transactions.get_mut(dep_hash) {
+                    dep_entry.dependents.remove(tx_hash);
+                }
+            }
+
+            // Remove dependents
+            for dep_hash in &entry.dependents {
+                if let Some(dep_entry) = inner.transactions.get_mut(dep_hash) {
+                    dep_entry.dependencies.remove(tx_hash);
+                }
+            }
+
+            log::debug!("Removed transaction {} from mempool", tx_hash.to_hex());
         }
+        Ok(())
+    }
+
+    /// Internal method for removing lowest fee transaction
+    fn remove_lowest_fee_transaction_internal(inner: &mut MempoolInner) -> Result<()> {
+        if let Some((_, tx_hash)) = inner.by_fee.iter().next() {
+            let tx_hash = *tx_hash;
+            Self::remove_transaction_internal(inner, &tx_hash)?;
+        }
+        Ok(())
+    }
+
+    /// Internal cleanup method
+    async fn cleanup_expired_internal(inner: &mut MempoolInner, _state: &Arc<RwLock<State>>) -> Result<()> {
+        let mut to_remove = Vec::new();
+        
+        for (hash, entry) in &inner.transactions {
+            if entry.is_expired(inner.config.max_transaction_age) {
+                to_remove.push(*hash);
+            }
+        }
+
+        for hash in to_remove {
+            Self::remove_transaction_internal(inner, &hash)?;
+            log::debug!("Removed expired transaction {} from mempool", hash.to_hex());
+        }
+
+        Ok(())
     }
 }
 
@@ -459,8 +481,8 @@ mod tests {
         let config = MempoolConfig::default();
         let mempool = Mempool::new(config, state);
 
-        assert_eq!(mempool.size(), 0);
-        assert!(mempool.is_empty());
+        assert_eq!(mempool.size().await, 0);
+        assert!(mempool.is_empty().await);
     }
 
     #[tokio::test]
@@ -469,7 +491,7 @@ mod tests {
         let config = MempoolConfig::default();
         let mempool = Mempool::new(config, state);
 
-        let stats = mempool.get_stats();
+        let stats = mempool.get_stats().await;
         assert_eq!(stats.total_transactions, 0);
         assert_eq!(stats.total_size_bytes, 0);
     }
@@ -478,9 +500,9 @@ mod tests {
     async fn test_mempool_clear() {
         let state = Arc::new(RwLock::new(State::new()));
         let config = MempoolConfig::default();
-        let mut mempool = Mempool::new(config, state);
+        let mempool = Mempool::new(config, state);
 
-        mempool.clear();
-        assert_eq!(mempool.size(), 0);
+        mempool.clear().await;
+        assert_eq!(mempool.size().await, 0);
     }
 }

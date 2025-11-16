@@ -85,29 +85,109 @@ pub fn calculate_transaction_fee(gas_used: u64, gas_price: u64) -> u64 {
 }
 
 /// Validate transaction basic structure
+/// This performs comprehensive validation before signature verification
 pub fn validate_transaction_structure(transaction: &Transaction) -> Result<()> {
-    if transaction.fee == 0 {
+    // 1. Validate addresses are not empty and have correct format
+    if transaction.from.as_str().is_empty() {
         return Err(BlockchainError::InvalidTransaction(
-            "Zero fee not allowed".to_string(),
+            "Sender address cannot be empty".to_string(),
         ));
     }
-
-    if transaction.timestamp > chrono::Utc::now().timestamp_millis() as u64 + 300000 {
-        // 5 minutes in future maximum
+    
+    if transaction.to.as_str().is_empty() {
         return Err(BlockchainError::InvalidTransaction(
-            "Timestamp too far in future".to_string(),
+            "Recipient address cannot be empty".to_string(),
         ));
     }
 
     if !validate_address(&transaction.from) {
         return Err(BlockchainError::InvalidTransaction(
-            "Invalid sender address".to_string(),
+            format!("Invalid sender address format: {}", transaction.from.as_str()),
         ));
     }
 
     if !validate_address(&transaction.to) {
         return Err(BlockchainError::InvalidTransaction(
-            "Invalid recipient address".to_string(),
+            format!("Invalid recipient address format: {}", transaction.to.as_str()),
+        ));
+    }
+
+    // 2. Validate amounts don't overflow
+    if transaction.amount.checked_add(transaction.fee).is_none() {
+        return Err(BlockchainError::InvalidTransaction(
+            "Amount + fee would overflow".to_string(),
+        ));
+    }
+
+    // 3. Validate fee is non-zero (except for genesis transactions)
+    if transaction.fee == 0 && !transaction.from.is_zero() {
+        return Err(BlockchainError::InvalidTransaction(
+            "Zero fee not allowed (except genesis)".to_string(),
+        ));
+    }
+
+    // 4. Validate timestamp is reasonable (not too far in future)
+    let now = chrono::Utc::now().timestamp_millis() as u64;
+    if transaction.timestamp > now + 300_000 {
+        // 5 minutes in future maximum
+        return Err(BlockchainError::InvalidTransaction(
+            format!("Timestamp too far in future: {} vs now {}", 
+                    transaction.timestamp, now),
+        ));
+    }
+
+    // 5. Validate timestamp is not too old (24 hours)
+    if transaction.timestamp + 86_400_000 < now {
+        return Err(BlockchainError::InvalidTransaction(
+            "Transaction too old (>24 hours)".to_string(),
+        ));
+    }
+
+    // 6. Validate transaction type specific fields
+    match transaction.transaction_type {
+        TransactionType::Transfer => {
+            if transaction.amount == 0 {
+                return Err(BlockchainError::InvalidTransaction(
+                    "Transfer amount cannot be zero".to_string(),
+                ));
+            }
+        }
+        TransactionType::ContractCall => {
+            if transaction.data.is_empty() {
+                return Err(BlockchainError::InvalidTransaction(
+                    "Contract call must have data".to_string(),
+                ));
+            }
+        }
+        TransactionType::ContractDeployment => {
+            if transaction.data.is_empty() {
+                return Err(BlockchainError::InvalidTransaction(
+                    "Contract deploy must have bytecode".to_string(),
+                ));
+            }
+        }
+        TransactionType::ConfidentialTransfer => {
+            if transaction.zk_proof.is_none() {
+                log::warn!("Confidential transaction without proof - this should be validated");
+                return Err(BlockchainError::InvalidTransaction(
+                    "Confidential transaction must include zero-knowledge proof".to_string(),
+                ));
+            }
+        }
+        TransactionType::Stake | TransactionType::Unstake => {
+            if transaction.amount == 0 {
+                return Err(BlockchainError::InvalidTransaction(
+                    "Stake amount cannot be zero".to_string(),
+                ));
+            }
+        }
+        _ => {} // Other types don't have specific requirements
+    }
+
+    // 7. Validate signature exists (will be verified separately)
+    if transaction.signature.is_empty() && !transaction.from.is_zero() {
+        return Err(BlockchainError::InvalidTransaction(
+            "Transaction signature is missing (required for non-genesis)".to_string(),
         ));
     }
 

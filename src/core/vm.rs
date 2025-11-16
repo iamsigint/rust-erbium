@@ -510,15 +510,9 @@ pub struct ExecutionContext {
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
-            address: Address::new_unchecked(
-                "0x0000000000000000000000000000000000000000".to_string(),
-            ),
-            caller: Address::new_unchecked(
-                "0x0000000000000000000000000000000000000000".to_string(),
-            ),
-            origin: Address::new_unchecked(
-                "0x0000000000000000000000000000000000000000".to_string(),
-            ),
+            address: Address::zero(),
+            caller: Address::zero(),
+            origin: Address::zero(),
             value: 0,
             data: Vec::new(),
             gas_price: 1,

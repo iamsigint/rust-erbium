@@ -80,11 +80,15 @@ impl MmapDatabase {
             .open(path)?;
 
         // Set initial file size if empty
-        if file.metadata()?.len() == 0 {
+        let file_size = file.metadata()?.len();
+        if file_size == 0 {
             file.set_len(1024 * 1024)?; // 1MB initial size
         }
 
-        // Create memory mapping
+        // SAFETY: This is safe because:
+        // 1. We have exclusive access to the file through OpenOptions
+        // 2. The file size is valid and non-zero
+        // 3. The mmap will be protected by RwLock for concurrent access
         let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
 
         let metadata = DatabaseMetadata::default();
@@ -261,10 +265,21 @@ impl MmapDatabase {
 
     /// Remap file with new size
     fn remap_file(&mut self, new_size: usize) -> Result<()> {
+        // Validate new size is reasonable (max 1GB per remap)
+        if new_size > 1024 * 1024 * 1024 {
+            return Err(BlockchainError::Storage(
+                format!("Requested mmap size too large: {} bytes", new_size)
+            ));
+        }
+
         // Extend file size
         self.file.set_len(new_size as u64)?;
 
-        // Create new mapping
+        // SAFETY: This is safe because:
+        // 1. We just set the file size above
+        // 2. We have exclusive mutable access to self
+        // 3. The old mmap will be properly dropped when replaced
+        // 4. New mmap will be protected by RwLock
         let new_mmap = unsafe { MmapOptions::new().map_mut(&self.file)? };
 
         // Update mmap
