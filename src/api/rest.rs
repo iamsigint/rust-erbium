@@ -485,18 +485,26 @@ impl RestServer {
             .boxed();
 
         // Account endpoints
+        let self_clone_accounts_info = self.clone();
         let account_info = warp::path("api")
             .and(warp::path("v1"))
             .and(warp::path!("accounts" / String))
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::get_account_info);
+            .and_then(move |account| {
+                let server = self_clone_accounts_info.clone();
+                async move { server.get_account_info(account).await }
+            });
 
+        let self_clone_account_txs = self.clone();
         let account_transactions = warp::path("api")
             .and(warp::path("v1"))
             .and(warp::path!("accounts" / String / "transactions"))
             .and(warp::get())
-            .and_then(Self::get_account_transactions);
+            .and_then(move |account| {
+                let server = self_clone_account_txs.clone();
+                async move { server.get_account_transactions(account).await }
+            });
 
         let account_routes = account_info.or(account_transactions).boxed();
 
@@ -779,6 +787,38 @@ impl RestServer {
             "index": tx_index,
             "status": "confirmed"
         })
+    }
+
+    fn account_activity_metrics(
+        blockchain: &Blockchain,
+        address: &Address,
+    ) -> (u64, Option<u64>, Option<u64>) {
+        let mut transaction_count: u64 = 0;
+        let mut created_at: Option<u64> = None;
+        let mut last_activity: Option<u64> = None;
+        let target = address.as_str();
+
+        for block in &blockchain.blocks {
+            let mut touched = false;
+            for tx in &block.transactions {
+                if tx.from.as_str() == target || tx.to.as_str() == target {
+                    transaction_count += 1;
+                    touched = true;
+                }
+            }
+
+            if touched {
+                let ts = block.header.timestamp;
+                if created_at.map_or(true, |current| ts < current) {
+                    created_at = Some(ts);
+                }
+                if last_activity.map_or(true, |current| ts > current) {
+                    last_activity = Some(ts);
+                }
+            }
+        }
+
+        (transaction_count, created_at, last_activity)
     }
 
     async fn get_transactions(&self) -> Result<impl warp::Reply, Infallible> {
@@ -1173,35 +1213,100 @@ impl RestServer {
     }
 
     // Account handlers - REAL BALANCE INTEGRATION
-    async fn get_account_info(account_addr: String) -> Result<impl warp::Reply, Infallible> {
-        // Return real account data - all accounts start with zero balance and nonce
-        let account = serde_json::json!({
-            "address": account_addr,
-            "balance": "0",        // Real balance from blockchain state (currently zero)
-            "nonce": 0,
-            "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-            "storage_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-            "transaction_count": 0,
-            "is_contract": false,
-            "created_at": null,
-            "last_activity": null
-        });
+    async fn get_account_info(&self, account_addr: String) -> Result<impl warp::Reply, Infallible> {
+        let address = match Address::new(account_addr.clone()) {
+            Ok(addr) => addr,
+            Err(_) => {
+                let response = RestResponse::<serde_json::Value> {
+                    success: false,
+                    data: None,
+                    error: Some("Invalid account address".to_string()),
+                };
+                return Ok(warp::reply::json(&response));
+            }
+        };
 
-        let response = RestResponse {
-            success: true,
-            data: Some(account),
-            error: None,
+        if let Some(blockchain) = &self.persistent_blockchain {
+            let chain = blockchain.read().await;
+            let state = chain.get_state();
+
+            if let Some(account) = state.get_account(&address) {
+                let (transaction_count, created_at, last_activity) =
+                    Self::account_activity_metrics(chain.blockchain(), &address);
+
+                let response = RestResponse {
+                    success: true,
+                    data: Some(serde_json::json!({
+                        "address": account_addr,
+                        "balance": account.balance.to_string(),
+                        "nonce": account.nonce,
+                        "code_hash": account.code_hash.as_ref().map(|hash| hash.to_string()),
+                        "storage_root": account.storage_root.to_string(),
+                        "transaction_count": transaction_count,
+                        "is_contract": account.code_hash.is_some(),
+                        "created_at": created_at,
+                        "last_activity": last_activity
+                    })),
+                    error: None,
+                };
+                return Ok(warp::reply::json(&response));
+            }
+        }
+
+        let response = RestResponse::<serde_json::Value> {
+            success: false,
+            data: None,
+            error: Some("Account not found".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
     async fn get_account_transactions(
-        _account_addr: String,
+        &self,
+        account_addr: String,
     ) -> Result<impl warp::Reply, Infallible> {
-        // No transactions have been made yet - return empty array
+        const MAX_ACCOUNT_TRANSACTIONS: usize = 100;
+
+        let address = match Address::new(account_addr.clone()) {
+            Ok(addr) => addr,
+            Err(_) => {
+                let response = RestResponse::<serde_json::Value> {
+                    success: false,
+                    data: None,
+                    error: Some("Invalid account address".to_string()),
+                };
+                return Ok(warp::reply::json(&response));
+            }
+        };
+
+        let mut transactions_json = Vec::new();
+
+        if let Some(blockchain) = &self.persistent_blockchain {
+            let chain = blockchain.read().await;
+            let blocks = &chain.blockchain().blocks;
+            let address_str = address.as_str().to_string();
+
+            'outer: for block in blocks.iter().rev() {
+                for (index, tx) in block.transactions.iter().enumerate().rev() {
+                    if tx.from.as_str() == address_str || tx.to.as_str() == address_str {
+                        transactions_json.push(Self::format_transaction(
+                            tx,
+                            Some(block),
+                            Some(block.header.number),
+                            Some(index),
+                        ));
+
+                        if transactions_json.len() >= MAX_ACCOUNT_TRANSACTIONS {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+
         let response = RestResponse {
             success: true,
-            data: Some(serde_json::Value::Array(vec![])),
+            data: Some(serde_json::Value::Array(transactions_json)),
             error: None,
         };
         Ok(warp::reply::json(&response))
