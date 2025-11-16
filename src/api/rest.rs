@@ -273,12 +273,12 @@ impl RestServer {
         // Build routes
         let routes = self.build_routes();
 
-        // Start the HTTP server
-        let addr: SocketAddr = ([127, 0, 0, 1], self.port)
+        // Start the HTTP server - bind to 0.0.0.0 to accept external connections
+        let addr: SocketAddr = ([0, 0, 0, 0], self.port)
             .try_into()
             .map_err(|e| BlockchainError::Network(format!("Invalid address: {}", e)))?;
 
-        log::info!("🌐 REST API listening on http://{}", addr);
+        log::info!("🌐 REST API listening on http://0.0.0.0:{}", self.port);
         log::info!("📡 Available endpoints:");
         log::info!("   GET  /api/v1/health");
         log::info!("   GET  /api/v1/accounts/<address>");

@@ -26,7 +26,7 @@ pub struct GenesisConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenesisData {
     pub timestamp: u64,
-    pub initial_validators: Vec<String>,
+    pub initial_validators: Vec<ValidatorAllocation>,
     pub initial_balances: Vec<GenesisAllocation>,
 }
 
@@ -34,6 +34,12 @@ pub struct GenesisData {
 pub struct GenesisAllocation {
     pub address: String,
     pub amount: String, // String para evitar problemas de precisão
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorAllocation {
+    pub address: String,
+    pub stake: String, // Stake amount in ERB (string for precision)
 }
 
 pub struct Blockchain {
@@ -135,6 +141,22 @@ impl Blockchain {
                                     allocation.amount,
                                     allocation.address
                                 );
+                            }
+
+                            // Process initial validators with stake
+                            if !genesis_config.genesis.initial_validators.is_empty() {
+                                log::info!(
+                                    "Found {} initial validators with stake",
+                                    genesis_config.genesis.initial_validators.len()
+                                );
+                                
+                                for validator in &genesis_config.genesis.initial_validators {
+                                    log::info!(
+                                        "Genesis validator: {} with {} ERB staked",
+                                        validator.address,
+                                        validator.stake
+                                    );
+                                }
                             }
 
                             log::info!(

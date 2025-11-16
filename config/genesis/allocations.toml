@@ -14,8 +14,14 @@
 # - 1M ERB = 100,000,000,000,000 unidades
 
 [genesis]
-timestamp = 1704067200  # 2024-01-01 00:00:00 UTC
-initial_validators = []
+# FIXO: Mesmo timestamp em TODOS os nós para genesis idêntico
+timestamp = 1700000000  # 2023-11-14 22:13:20 UTC (FIXO)
+
+# Initial Validators (Genesis Validators with Stake)
+# These validators are automatically registered at genesis with their stake
+initial_validators = [
+  { address = "0xe91b31507e84d575a0a12b1bbb98648bd2079011", stake = "10000000000000000" }  # 100M ERB staked
+]
 
 initial_balances = [
   # Reserva Pessoal (50M ERB - 5% do supply)

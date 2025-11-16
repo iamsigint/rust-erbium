@@ -40,7 +40,13 @@ impl NodeManager {
         };
 
         let consensus_config = crate::consensus::ConsensusConfig::default();
-        let consensus = crate::consensus::pos::ProofOfStake::new(consensus_config);
+        let mut consensus = crate::consensus::pos::ProofOfStake::new(consensus_config);
+        
+        // Initialize genesis validators with stake
+        if let Err(e) = Self::initialize_genesis_validators(&mut consensus).await {
+            log::warn!("Failed to initialize genesis validators: {}", e);
+        }
+        
         let consensus = Some(Arc::new(RwLock::new(consensus)));
 
         // Initialize Erbium Engine
@@ -357,6 +363,66 @@ impl NodeManager {
 
         self.network_handle = Some(handle);
         log::info!("P2P network initialization complete");
+        Ok(())
+    }
+
+    /// Initialize genesis validators with their initial stake
+    async fn initialize_genesis_validators(
+        consensus: &mut crate::consensus::pos::ProofOfStake,
+    ) -> Result<()> {
+        use std::fs;
+        use std::path::Path;
+        use crate::core::types::Address;
+
+        let genesis_config_path = "config/genesis/allocations.toml";
+        
+        if !Path::new(genesis_config_path).exists() {
+            log::warn!("Genesis config not found at {}", genesis_config_path);
+            return Ok(());
+        }
+
+        let config_content = fs::read_to_string(genesis_config_path).map_err(|e| {
+            BlockchainError::Storage(format!("Failed to read genesis config: {}", e))
+        })?;
+
+        let genesis_config: crate::core::chain::GenesisConfig =
+            toml::from_str(&config_content).map_err(|e| {
+                BlockchainError::Storage(format!("Failed to parse genesis config: {}", e))
+            })?;
+
+        // Process initial validators
+        for validator in &genesis_config.genesis.initial_validators {
+            let address = Address::new(validator.address.clone()).map_err(|e| {
+                BlockchainError::InvalidTransaction(format!(
+                    "Invalid validator address {}: {}",
+                    validator.address, e
+                ))
+            })?;
+
+            let stake: u64 = validator.stake.parse().map_err(|e| {
+                BlockchainError::InvalidTransaction(format!(
+                    "Invalid validator stake {}: {}",
+                    validator.stake, e
+                ))
+            })?;
+
+            // Add validator stake to consensus
+            consensus.add_stake(address.clone(), stake)?;
+            
+            log::info!(
+                "Initialized genesis validator: {} with {} ERB staked",
+                validator.address,
+                stake
+            );
+        }
+
+        if !genesis_config.genesis.initial_validators.is_empty() {
+            log::info!(
+                "Successfully initialized {} genesis validators",
+                genesis_config.genesis.initial_validators.len()
+            );
+        }
+
         Ok(())
     }
 }
