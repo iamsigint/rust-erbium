@@ -7,28 +7,15 @@ use tokio::signal;
 #[command(name = "erbium-node")]
 #[command(about = "Erbium Blockchain Node")]
 struct Args {
-    /// Run P2P network demonstration instead of normal node
-    #[arg(long)]
-    p2p_demo: bool,
+    /// Data directory for blockchain storage
+    #[arg(long, default_value = "./erbium-data")]
+    data_dir: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse command line arguments (ignore CLI errors for demo)
-    let args = match Args::try_parse() {
-        Ok(args) => args,
-        Err(_) => Args { p2p_demo: true } // Default to demo
-    };
-
-    // Check if running P2P demonstration
-    if args.p2p_demo {
-        println!("🚀 Starting Erbium P2P Network Demonstration");
-        println!("🌐 P2P Network Status: Operational");
-        println!("✅ Erbium Engine initialized");
-        println!("✅ P2P Network ready for transaction broadcasting");
-        println!("⏳ Demonstration complete!");
-        return Ok(());
-    }
+    // Parse command line arguments
+    let args = Args::parse();
 
     // Initialize logging
     if let Err(e) = logger::setup_logger() {
@@ -37,6 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     log::info!("Starting Erbium Blockchain Node v{}", env!("CARGO_PKG_VERSION"));
+    log::info!("Data directory: {}", args.data_dir);
 
     // Create and start the node manager
     let mut node_manager = match NodeManager::new().await {

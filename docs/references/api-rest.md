@@ -10,6 +10,7 @@ The Erbium Blockchain provides comprehensive REST, JSON-RPC, and WebSocket APIs 
 http://localhost:8080/api/v1
 ```
 
+
 ## Authentication
 
 Most endpoints are public. Bridge operations may require authentication in production.
@@ -372,6 +373,8 @@ Get DAO information.
 ```
 
 ## Staking
+
+**⚠️ Nota: Staking delegation/undelegation It is NOT implemented in the current version..**
 
 ### GET /staking/validators
 
@@ -1165,12 +1168,29 @@ go get github.com/erbium/go-sdk
 
 ---
 
+
 # Changelog
+
 
 ## v1.0.0
 - Initial release with full REST, JSON-RPC, and WebSocket APIs
-- Complete governance, staking, and bridge functionality
+- Complete governance, staking (delegation not yet implemented), and bridge functionality
 - Enterprise-grade security and monitoring
+- **CRITICAL BUG FIXES:**
+  - API now uses /api/v1 path prefix correctly on all endpoints
+  - New accounts now show correct zero balance (removed hardcoded 1M balance)
+  - Removed all fake block/transaction data - API reflects real empty blockchain state
+  - Removed fake validators data - returns empty array (no validators yet)
+  - Removed fake bridge configurations - returns empty array (no bridges configured)
+  - Removed fake governance proposals and votes - now returns proper error messages for unimplemented features
+  - Removed fake staking validators and rewards - now returns errors for unimplemented staking
+  - Removed fake smart contract data - now returns errors for unimplemented contracts
+  - Analytics endpoints return realistic 0 values instead of fake TPS/blocks/metrics data
+  - Real version number from Cargo.toml (not hardcoded "1.0.0")
+  - All endpoints now reflect true state: network stopped, height 0, peers 0, supply 0
+- **Data Integrity:** API no longer returns fake production data
+- Fixed critical CLI: --data-dir argument now supported correctly
+- Removed demo/demo P2P code from main.rs for clean production deployment
 
 ---
 

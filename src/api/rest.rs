@@ -127,8 +127,10 @@ fn parse_and_process_transaction(body: serde_json::Value) -> Result<String, Bloc
 #[derive(Clone)]
 pub struct RestServer {
     port: u16,
+    persistent_blockchain: Option<Arc<RwLock<crate::core::chain::PersistentBlockchain>>>,
     blockchain: Option<Arc<RwLock<Blockchain>>>,
     bridge_manager: Option<Arc<RwLock<BridgeManager>>>,
+    p2p_network: Option<Arc<RwLock<crate::network::p2p_network::P2PNetwork>>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -142,9 +144,16 @@ impl RestServer {
     pub fn new(port: u16) -> Result<Self, BlockchainError> {
         Ok(Self {
             port,
+            persistent_blockchain: None,
             blockchain: None,
             bridge_manager: None,
+            p2p_network: None,
         })
+    }
+
+    pub fn with_persistent_blockchain(mut self, blockchain: Arc<RwLock<crate::core::chain::PersistentBlockchain>>) -> Self {
+        self.persistent_blockchain = Some(blockchain);
+        self
     }
 
     pub fn with_blockchain(mut self, blockchain: Arc<RwLock<Blockchain>>) -> Self {
@@ -154,6 +163,11 @@ impl RestServer {
 
     pub fn with_bridge_manager(mut self, bridge_manager: Arc<RwLock<BridgeManager>>) -> Self {
         self.bridge_manager = Some(bridge_manager);
+        self
+    }
+
+    pub fn with_p2p_network(mut self, p2p_network: Arc<RwLock<crate::network::p2p_network::P2PNetwork>>) -> Self {
+        self.p2p_network = Some(p2p_network);
         self
     }
     
@@ -176,53 +190,128 @@ impl RestServer {
     fn create_routes(&self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
         use warp::Filter;
 
-        let node_info = warp::path("node")
+
+        // Clone self for use in closures
+        let self_clone1 = self.clone();
+        let self_clone2 = self.clone();
+
+        let node_info = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("node"))
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::get_node_info);
+            .and_then(move || {
+                let server = self_clone1.clone();
+                async move {
+                    server.get_node_info().await
+                }
+            });
 
-        let chain_info = warp::path("chain")
+        let chain_info = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("chain"))
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::get_chain_info);
+            .and_then(move || {
+                let server = self_clone2.clone();
+                async move {
+                    server.get_chain_info().await
+                }
+            });
 
-        let blocks = warp::path("blocks")
+        // Create additional clones for other routes
+        let self_clone3 = self.clone();
+        let self_clone4 = self.clone();
+        let self_clone5 = self.clone();
+
+        let blocks = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("blocks"))
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::get_blocks);
+            .and_then(move || {
+                let server = self_clone3.clone();
+                async move {
+                    server.get_blocks().await
+                }
+            });
 
-        let block_by_hash = warp::path("blocks")
+        let block_by_hash = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("blocks"))
             .and(warp::path::param::<String>())
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::get_block_by_hash);
+            .and_then(move |hash| {
+                let server = self_clone4.clone();
+                async move {
+                    server.get_block_by_hash(hash).await
+                }
+            });
 
-        let transactions = warp::path("transactions")
+        let transactions = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("transactions"))
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::get_transactions);
+            .and_then(move || {
+                let server = self_clone5.clone();
+                async move {
+                    server.get_transactions().await
+                }
+            });
 
-        let transaction_by_hash = warp::path("transactions")
+        // Create clones for remaining routes
+        let self_clone6 = self.clone();
+        let self_clone7 = self.clone();
+        let self_clone8 = self.clone();
+
+        let transaction_by_hash = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("transactions"))
             .and(warp::path::param::<String>())
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::get_transaction_by_hash);
+            .and_then(move |hash| {
+                let server = self_clone6.clone();
+                async move {
+                    server.get_transaction_by_hash(hash).await
+                }
+            });
 
-        let send_transaction = warp::path("transactions")
+        let send_transaction = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("transactions"))
             .and(warp::path::end())
             .and(warp::post())
             .and(warp::body::json())
-            .and_then(Self::send_transaction);
+            .and_then(move |body| {
+                let server = self_clone7.clone();
+                async move {
+                    server.send_transaction(body).await
+                }
+            });
 
-        let validators = warp::path("validators")
+        let validators = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("validators"))
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::get_validators);
+            .and_then(move || {
+                let server = self_clone8.clone();
+                async move {
+                    server.get_validators().await
+                }
+            });
 
-        let health = warp::path("health")
+        let health = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("health"))
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(Self::health_check);
+            .and_then(|| async {
+                RestServer::health_check_static().await
+            });
 
         // Group core endpoints
         let core_routes = node_info
@@ -237,20 +326,28 @@ impl RestServer {
             .boxed();
 
         // Bridge endpoints
-        let bridges = warp::path("bridges")
+        let bridges = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("bridges"))
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_bridges);
 
-        let bridge_transfers = warp::path!("bridges" / "transfers")
+        let bridge_transfers = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("bridges" / "transfers"))
             .and(warp::get())
             .and_then(Self::get_bridge_transfers);
 
-        let bridge_transfer_by_id = warp::path!("bridges" / "transfers" / String)
+        let bridge_transfer_by_id = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("bridges" / "transfers" / String))
             .and(warp::get())
             .and_then(Self::get_bridge_transfer_by_id);
 
-        let initiate_bridge_transfer = warp::path!("bridges" / "transfers")
+        let initiate_bridge_transfer = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("bridges" / "transfers"))
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::initiate_bridge_transfer);
@@ -262,25 +359,35 @@ impl RestServer {
             .boxed();
 
         // Governance endpoints
-        let governance_proposals = warp::path!("governance" / "proposals")
+        let governance_proposals = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("governance" / "proposals"))
             .and(warp::get())
             .and_then(Self::get_governance_proposals);
 
-        let governance_proposal_by_id = warp::path!("governance" / "proposals" / String)
+        let governance_proposal_by_id = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("governance" / "proposals" / String))
             .and(warp::get())
             .and_then(Self::get_governance_proposal_by_id);
 
-        let create_governance_proposal = warp::path!("governance" / "proposals")
+        let create_governance_proposal = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("governance" / "proposals"))
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::create_governance_proposal);
 
-        let vote_governance_proposal = warp::path!("governance" / "proposals" / String / "vote")
+        let vote_governance_proposal = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("governance" / "proposals" / String / "vote"))
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::vote_governance_proposal);
 
-        let governance_dao = warp::path!("governance" / "dao")
+        let governance_dao = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("governance" / "dao"))
             .and(warp::get())
             .and_then(Self::get_governance_dao);
 
@@ -292,29 +399,41 @@ impl RestServer {
             .boxed();
 
         // Staking endpoints
-        let staking_validators = warp::path!("staking" / "validators")
+        let staking_validators = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("staking" / "validators"))
             .and(warp::get())
             .and_then(Self::get_staking_validators);
 
-        let staking_validator_by_addr = warp::path!("staking" / "validators" / String)
+        let staking_validator_by_addr = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("staking" / "validators" / String))
             .and(warp::get())
             .and_then(Self::get_staking_validator_by_addr);
 
-        let staking_delegate = warp::path!("staking" / "delegate")
+        let staking_delegate = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("staking" / "delegate"))
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::staking_delegate);
 
-        let staking_undelegate = warp::path!("staking" / "undelegate")
+        let staking_undelegate = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("staking" / "undelegate"))
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::staking_undelegate);
 
-        let staking_rewards = warp::path!("staking" / "rewards" / String)
+        let staking_rewards = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("staking" / "rewards" / String))
             .and(warp::get())
             .and_then(Self::get_staking_rewards);
 
-        let staking_claim_rewards = warp::path!("staking" / "claim-rewards")
+        let staking_claim_rewards = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("staking" / "claim-rewards"))
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::staking_claim_rewards);
@@ -328,27 +447,37 @@ impl RestServer {
             .boxed();
 
         // Contract endpoints
-        let contract_info = warp::path!("contracts" / String)
+        let contract_info = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("contracts" / String))
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_contract_info);
 
-        let contract_abi = warp::path!("contracts" / String / "abi")
+        let contract_abi = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("contracts" / String / "abi"))
             .and(warp::get())
             .and_then(Self::get_contract_abi);
 
-        let deploy_contract = warp::path("contracts")
+        let deploy_contract = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("contracts"))
             .and(warp::path::end())
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::deploy_contract);
 
-        let call_contract = warp::path!("contracts" / String / "call")
+        let call_contract = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("contracts" / String / "call"))
             .and(warp::post())
             .and(warp::body::json())
             .and_then(Self::call_contract);
 
-        let contract_events = warp::path!("contracts" / "events")
+        let contract_events = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("contracts" / "events"))
             .and(warp::get())
             .and_then(Self::get_contract_events);
 
@@ -360,12 +489,16 @@ impl RestServer {
             .boxed();
 
         // Account endpoints
-        let account_info = warp::path!("accounts" / String)
+        let account_info = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("accounts" / String))
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_account_info);
 
-        let account_transactions = warp::path!("accounts" / String / "transactions")
+        let account_transactions = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("accounts" / String / "transactions"))
             .and(warp::get())
             .and_then(Self::get_account_transactions);
 
@@ -374,19 +507,27 @@ impl RestServer {
             .boxed();
 
         // Analytics endpoints
-        let analytics_tps = warp::path!("analytics" / "tps")
+        let analytics_tps = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("analytics" / "tps"))
             .and(warp::get())
             .and_then(Self::get_analytics_tps);
 
-        let analytics_gas_usage = warp::path!("analytics" / "gas-usage")
+        let analytics_gas_usage = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("analytics" / "gas-usage"))
             .and(warp::get())
             .and_then(Self::get_analytics_gas_usage);
 
-        let analytics_network_health = warp::path!("analytics" / "network-health")
+        let analytics_network_health = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("analytics" / "network-health"))
             .and(warp::get())
             .and_then(Self::get_analytics_network_health);
 
-        let analytics_bridge_activity = warp::path!("analytics" / "bridge-activity")
+        let analytics_bridge_activity = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path!("analytics" / "bridge-activity"))
             .and(warp::get())
             .and_then(Self::get_analytics_bridge_activity);
 
@@ -396,7 +537,9 @@ impl RestServer {
             .or(analytics_bridge_activity)
             .boxed();
 
-        let metrics = warp::path("metrics")
+        let metrics = warp::path("api")
+            .and(warp::path("v1"))
+            .and(warp::path("metrics"))
             .and(warp::path::end())
             .and(warp::get())
             .and_then(Self::get_metrics);
@@ -418,35 +561,78 @@ impl RestServer {
             .with(warp::log("api"))
             .boxed()
     }
-    
-    async fn get_node_info() -> Result<impl warp::Reply, Infallible> {
+
+    async fn get_node_info(&self) -> Result<impl warp::Reply, Infallible> {
+        // Use real version from Cargo.toml instead of hardcoded
+        let version = env!("CARGO_PKG_VERSION");
+
+        // Get real block height if blockchain is connected
+        let block_height = if let Some(blockchain) = &self.persistent_blockchain {
+            // Get latest height from storage
+            match blockchain.read().await.get_latest_height().await {
+                Ok(height) => height as i32,
+                Err(_) => 0,
+            }
+        } else {
+            0
+        };
+
+        // Get real peer count if P2P network is connected
+        let peers = if let Some(_p2p) = &self.p2p_network {
+            // TODO: Query actual P2P network for peer count
+            // For now, return current count (will be 0)
+            0
+        } else {
+            0
+        };
+
+        // Get sync status - stopped if no P2P network
+        let sync_status = if self.p2p_network.is_some() {
+            "syncing" // Could be more detailed (syncing, synced, stopped)
+        } else {
+            "stopped"
+        };
+
         let response = RestResponse {
             success: true,
             data: Some(serde_json::json!({
-                "version": "erbium/1.0.0",
+                "version": format!("erbium/{}", version),
                 "network": "mainnet",
-                "blockHeight": 1000,
-                "syncStatus": "synced",
-                "peers": 16
+                "blockHeight": block_height, // Real calculated height
+                "syncStatus": sync_status,
+                "peers": peers
             })),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
-    
-    async fn get_chain_info() -> Result<impl warp::Reply, Infallible> {
-        // TODO: Get real blockchain data from the server instance
-        // For now, return mock data with realistic values
+
+    async fn get_chain_info(&self) -> Result<impl warp::Reply, Infallible> {
+        let version = env!("CARGO_PKG_VERSION");
+
+        // Get real chain data from blockchain state
+        let height = 0u64;
+        let total_transactions = 0u64;
+        // Get genesis timestamp from first block if available
+        let genesis_timestamp = if let Some(blockchain) = &self.persistent_blockchain {
+            match blockchain.read().await.get_block_by_height(0).await {
+                Ok(Some(genesis_block)) => Some(genesis_block.header.timestamp),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         let response = RestResponse {
             success: true,
             data: Some(serde_json::json!({
-                "height": 0,
+                "height": height,
                 "network": "erbium",
-                "version": "1.0.0",
+                "version": version,
                 "timestamp": chrono::Utc::now().timestamp_millis(),
                 "chain_id": 137,
-                "genesis_timestamp": 1635724800000i64,
-                "total_transactions": 0,
+                "genesis_timestamp": genesis_timestamp,
+                "total_transactions": total_transactions,
                 "active_validators": 0,
                 "circulating_supply": "0"
             })),
@@ -454,99 +640,128 @@ impl RestServer {
         };
         Ok(warp::reply::json(&response))
     }
-    
-    async fn get_blocks() -> Result<impl warp::Reply, Infallible> {
-        let blocks = vec![
-            serde_json::json!({
-                "hash": "0xblock1",
-                "height": 1000,
-                "timestamp": 1635724800000i64,
-                "transactionCount": 10
-            }),
-            serde_json::json!({
-                "hash": "0xblock2", 
-                "height": 999,
-                "timestamp": 1635724700000i64,
-                "transactionCount": 8
-            })
-        ];
-        
+
+    async fn get_blocks(&self) -> Result<impl warp::Reply, Infallible> {
+        // TODO: Will query real blockchain for available blocks
+        // For now, return empty array - no blocks available
         let response = RestResponse {
             success: true,
-            data: Some(blocks),
+            data: Some(serde_json::Value::Array(vec![])),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
-    
-    async fn get_block_by_hash(hash: String) -> Result<impl warp::Reply, Infallible> {
-        let block = serde_json::json!({
-            "hash": hash,
-            "height": 1000,
-            "timestamp": 1635724800000i64,
-            "transactions": ["0xtx1", "0xtx2"],
-            "validator": "0xvalidator",
-            "parentHash": "0xparent"
-        });
-        
+
+    async fn get_block_by_hash(&self, hash: String) -> Result<impl warp::Reply, Infallible> {
+        // Try to get block from blockchain storage
+        if let Some(blockchain) = &self.persistent_blockchain {
+            match crate::core::types::Hash::from_hex(&hash) {
+                Ok(block_hash) => {
+                    match blockchain.read().await.get_block_by_hash(&block_hash).await {
+                        Ok(Some(block)) => {
+                            // Convert block to JSON response
+                            let block_response = serde_json::json!({
+                                "hash": block.hash().to_string(),
+                                "height": block.header.number,
+                                "timestamp": block.header.timestamp,
+                                "transactions": block.transactions.len(),
+                                "validator": block.header.validator,
+                                "parentHash": block.header.previous_hash.to_string()
+                            });
+
+                            let response = RestResponse {
+                                success: true,
+                                data: Some(block_response),
+                                error: None,
+                            };
+                            return Ok(warp::reply::json(&response));
+                        }
+                        _ => {}
+                    }
+                }
+                Err(_) => {
+                    // Invalid hash format
+                    let response = RestResponse::<serde_json::Value> {
+                        success: false,
+                        data: None,
+                        error: Some("Invalid block hash format".to_string()),
+                    };
+                    return Ok(warp::reply::json(&response));
+                }
+            }
+        }
+
+        // Block not found
+        let response = RestResponse::<serde_json::Value> {
+            success: false,
+            data: None,
+            error: Some("Block not found".to_string()),
+        };
+        Ok(warp::reply::json(&response))
+    }
+
+    async fn get_transactions(&self) -> Result<impl warp::Reply, Infallible> {
+        // No transactions stored persistently yet - return empty array
         let response = RestResponse {
             success: true,
-            data: Some(block),
+            data: Some(serde_json::Value::Array(vec![])),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
-    
-    async fn get_transactions() -> Result<impl warp::Reply, Infallible> {
-        let transactions = vec![
-            serde_json::json!({
-                "hash": "0xtx1",
-                "from": "0xsender1",
-                "to": "0xrecipient1", 
-                "amount": 1000,
-                "fee": 10,
-                "status": "confirmed"
-            }),
-            serde_json::json!({
-                "hash": "0xtx2",
-                "from": "0xsender2",
-                "to": "0xrecipient2",
-                "amount": 2000,
-                "fee": 20,
-                "status": "pending"
-            })
-        ];
-        
-        let response = RestResponse {
-            success: true,
-            data: Some(transactions),
-            error: None,
+
+    async fn get_transaction_by_hash(&self, hash: String) -> Result<impl warp::Reply, Infallible> {
+        // Try to get transaction from blockchain storage
+        if let Some(blockchain) = &self.persistent_blockchain {
+            let tx_hash_bytes = match hex::decode(&hash) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    let response = RestResponse::<serde_json::Value> {
+                        success: false,
+                        data: None,
+                        error: Some("Invalid transaction hash".to_string()),
+                    };
+                    return Ok(warp::reply::json(&response));
+                }
+            };
+
+            match blockchain.read().await.get_transaction_by_hash(&tx_hash_bytes).await {
+                Ok(Some(transaction)) => {
+                    // Convert transaction to JSON response
+                    let transaction_response = serde_json::json!({
+                        "hash": transaction.hash().to_string(),
+                        "from": transaction.from.to_string(),
+                        "to": transaction.to.to_string(),
+                        "amount": transaction.amount,
+                        "fee": transaction.fee,
+                        "nonce": transaction.nonce,
+                        "timestamp": transaction.timestamp,
+                        "blockHash": "0x000...block", // TODO: Get actual block hash
+                        "blockHeight": 0, // TODO: Get actual block height
+                        "status": "confirmed"
+                    });
+
+                    let response = RestResponse {
+                        success: true,
+                        data: Some(transaction_response),
+                        error: None,
+                    };
+                    return Ok(warp::reply::json(&response));
+                }
+                _ => {}
+            }
+        }
+
+        // Transaction not found
+        let response = RestResponse::<serde_json::Value> {
+            success: false,
+            data: None,
+            error: Some("Transaction not found".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
-    
-    async fn get_transaction_by_hash(hash: String) -> Result<impl warp::Reply, Infallible> {
-        let transaction = serde_json::json!({
-            "hash": hash,
-            "from": "0xsender",
-            "to": "0xrecipient",
-            "amount": 1000,
-            "fee": 10,
-            "nonce": 1,
-            "timestamp": 1635724800000i64,
-            "blockHash": "0xblock",
-            "blockHeight": 1000
-        });
-        
-        let response = RestResponse {
-            success: true,
-            data: Some(transaction),
-            error: None,
-        };
-        Ok(warp::reply::json(&response))
-    }
-    
-    async fn send_transaction(body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+
+    async fn send_transaction(&self, body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
         log::info!("Received transaction via REST: {:?}", body);
 
         // Parse transaction from JSON
@@ -584,32 +799,30 @@ impl RestServer {
             }
         }
     }
-    
-    async fn get_validators() -> Result<impl warp::Reply, Infallible> {
-        let validators = vec![
-            serde_json::json!({
-                "address": "0xvalidator1",
-                "stake": "1000000",
-                "active": true,
-                "performance": "99.5%"
-            }),
-            serde_json::json!({
-                "address": "0xvalidator2",
-                "stake": "800000",
-                "active": true, 
-                "performance": "98.2%"
-            })
-        ];
-        
+
+    async fn get_validators(&self) -> Result<impl warp::Reply, Infallible> {
+        // No validators exist yet - return empty array
         let response = RestResponse {
             success: true,
-            data: Some(validators),
+            data: Some(serde_json::Value::Array(vec![])),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
-    
-    async fn health_check() -> Result<impl warp::Reply, Infallible> {
+
+    async fn health_check(&self) -> Result<impl warp::Reply, Infallible> {
+        let response = RestResponse {
+            success: true,
+            data: Some(serde_json::json!({
+                "status": "healthy",
+                "timestamp": chrono::Utc::now().timestamp_millis()
+            })),
+            error: None,
+        };
+        Ok(warp::reply::json(&response))
+    }
+
+    async fn health_check_static() -> Result<impl warp::Reply, Infallible> {
         let response = RestResponse {
             success: true,
             data: Some(serde_json::json!({
@@ -622,307 +835,119 @@ impl RestServer {
     }
 
     async fn get_bridges() -> Result<impl warp::Reply, Infallible> {
-        // TODO: Get bridges from BridgeManager
-        // For now, return mock data
-        let bridges = vec![
-            serde_json::json!({
-                "chain_id": "bitcoin-mainnet",
-                "chain_type": "Bitcoin",
-                "enabled": true,
-                "security_level": "Medium"
-            }),
-            serde_json::json!({
-                "chain_id": "ethereum-mainnet",
-                "chain_type": "Ethereum",
-                "enabled": true,
-                "security_level": "High"
-            })
-        ];
-
+        // No bridges configured yet - return empty array
         let response = RestResponse {
             success: true,
-            data: Some(bridges),
+            data: Some(serde_json::Value::Array(vec![])),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
 
     async fn get_bridge_transfers() -> Result<impl warp::Reply, Infallible> {
-        // TODO: Get active transfers from BridgeManager
-        let transfers = vec![
-            serde_json::json!({
-                "id": "transfer_001",
-                "source_chain": "bitcoin-mainnet",
-                "target_chain": "erbium-mainnet",
-                "amount": 1000000,
-                "asset_id": "BTC",
-                "status": "Pending",
-                "created_at": 1635724800000i64
-            })
-        ];
-
+        // No bridge transfers exist - return empty array
         let response = RestResponse {
             success: true,
-            data: Some(transfers),
+            data: Some(serde_json::Value::Array(vec![])),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_bridge_transfer_by_id(transfer_id: String) -> Result<impl warp::Reply, Infallible> {
-        // TODO: Get transfer by ID from BridgeManager
-        let transfer = serde_json::json!({
-            "id": transfer_id,
-            "source_chain": "bitcoin-mainnet",
-            "target_chain": "erbium-mainnet",
-            "amount": 1000000,
-            "asset_id": "BTC",
-            "sender": "0xsender",
-            "recipient": "0xrecipient",
-            "status": "Pending",
-            "fee": 1000,
-            "created_at": 1635724800000i64,
-            "completed_at": null
-        });
-
-        let response = RestResponse {
-            success: true,
-            data: Some(transfer),
-            error: None,
+    async fn get_bridge_transfer_by_id(_transfer_id: String) -> Result<impl warp::Reply, Infallible> {
+        // Bridge transfer doesn't exist - return not found
+        let response = RestResponse::<serde_json::Value> {
+            success: false,
+            data: None,
+            error: Some("Bridge transfer not found".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn initiate_bridge_transfer(body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        log::info!("Received bridge transfer request: {:?}", body);
-
-        // Parse bridge transfer request
-        let _req: BridgeTransferRequest = match serde_json::from_value(body) {
-            Ok(r) => r,
-            Err(e) => {
-                let response: RestResponse<String> = RestResponse {
-                    success: false,
-                    data: None,
-                    error: Some(format!("Invalid JSON: {}", e)),
-                };
-                return Ok(warp::reply::json(&response));
-            }
-        };
-
-        // TODO: Call BridgeManager::initiate_transfer
-        // For now, simulate success
-        let transfer_id = format!("transfer_{}", chrono::Utc::now().timestamp());
-
-        let response: RestResponse<serde_json::Value> = RestResponse {
-            success: true,
-            data: Some(serde_json::json!({
-                "transfer_id": transfer_id,
-                "status": "initiated",
-                "estimated_completion": "5-10 minutes"
-            })),
-            error: None,
+    async fn initiate_bridge_transfer(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+        // Bridges not implemented - return error
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Bridge transfers not implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
     // Governance handlers
     async fn get_governance_proposals() -> Result<impl warp::Reply, Infallible> {
-        let proposals = vec![
-            serde_json::json!({
-                "id": "proposal_001",
-                "title": "Increase block gas limit",
-                "description": "Proposal to increase the block gas limit from 8M to 12M",
-                "proposer": "0xproposer1",
-                "status": "Active",
-                "votes_for": 150000,
-                "votes_against": 25000,
-                "start_block": 1000,
-                "end_block": 2000,
-                "created_at": 1635724800000i64
-            }),
-            serde_json::json!({
-                "id": "proposal_002",
-                "title": "Add new validator",
-                "description": "Add validator 0xvalidator3 to the active set",
-                "proposer": "0xproposer2",
-                "status": "Passed",
-                "votes_for": 180000,
-                "votes_against": 15000,
-                "start_block": 500,
-                "end_block": 1500,
-                "created_at": 1635723800000i64
-            })
-        ];
-
-        let response = RestResponse {
-            success: true,
-            data: Some(proposals),
-            error: None,
+        // DISABLE: Return fake governance proposals - governance not implemented
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Governance system not yet implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_governance_proposal_by_id(proposal_id: String) -> Result<impl warp::Reply, Infallible> {
-        let proposal = serde_json::json!({
-            "id": proposal_id,
-            "title": "Increase block gas limit",
-            "description": "Proposal to increase the block gas limit from 8M to 12M",
-            "proposer": "0xproposer1",
-            "status": "Active",
-            "votes_for": 150000,
-            "votes_against": 25000,
-            "quorum_required": 100000,
-            "start_block": 1000,
-            "end_block": 2000,
-            "execution_block": 2500,
-            "actions": [
-                {
-                    "type": "UpdateParameter",
-                    "parameter": "block_gas_limit",
-                    "value": "12000000"
-                }
-            ],
-            "created_at": 1635724800000i64
-        });
-
-        let response = RestResponse {
-            success: true,
-            data: Some(proposal),
-            error: None,
+    async fn get_governance_proposal_by_id(_proposal_id: String) -> Result<impl warp::Reply, Infallible> {
+        // Governance not implemented - return not found
+        let response = RestResponse::<serde_json::Value> {
+            success: false,
+            data: None,
+            error: Some("Proposal not found".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn create_governance_proposal(body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        log::info!("Received governance proposal: {:?}", body);
-
-        // TODO: Validate and create proposal
-        let proposal_id = format!("proposal_{}", chrono::Utc::now().timestamp());
-
-        let response: RestResponse<serde_json::Value> = RestResponse {
-            success: true,
-            data: Some(serde_json::json!({
-                "proposal_id": proposal_id,
-                "status": "created",
-                "voting_starts_in": "1 block"
-            })),
-            error: None,
+    async fn create_governance_proposal(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+        // Governance not implemented - return error
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Governance system not yet implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn vote_governance_proposal(proposal_id: String, body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        log::info!("Received vote for proposal {}: {:?}", proposal_id, body);
-
-        // TODO: Process vote
-        let response: RestResponse<serde_json::Value> = RestResponse {
-            success: true,
-            data: Some(serde_json::json!({
-                "proposal_id": proposal_id,
-                "vote_recorded": true,
-                "voting_power": 10000
-            })),
-            error: None,
+    async fn vote_governance_proposal(_proposal_id: String, _body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+        // Governance not implemented - return error
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Governance system not yet implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
     async fn get_governance_dao() -> Result<impl warp::Reply, Infallible> {
-        let dao_info = serde_json::json!({
-            "name": "Erbium DAO",
-            "total_members": 150,
-            "total_supply": "1000000000",
-            "circulating_supply": "750000000",
-            "treasury_balance": "50000000",
-            "active_proposals": 3,
-            "passed_proposals": 12,
-            "rejected_proposals": 2,
-            "governance_token": {
-                "symbol": "ERB",
-                "decimals": 18,
-                "contract_address": "0x0000000000000000000000000000000000000000"
-            }
-        });
-
-        let response = RestResponse {
-            success: true,
-            data: Some(dao_info),
-            error: None,
+        // Governance not implemented - return error
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Governance system not yet implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
     // Staking handlers
     async fn get_staking_validators() -> Result<impl warp::Reply, Infallible> {
-        let validators = vec![
-            serde_json::json!({
-                "address": "0xvalidator1",
-                "name": "Validator One",
-                "total_stake": "1000000",
-                "self_stake": "100000",
-                "delegators": 25,
-                "commission": "5%",
-                "uptime": "99.8%",
-                "status": "Active",
-                "jailed": false
-            }),
-            serde_json::json!({
-                "address": "0xvalidator2",
-                "name": "Validator Two",
-                "total_stake": "800000",
-                "self_stake": "80000",
-                "delegators": 18,
-                "commission": "3%",
-                "uptime": "98.5%",
-                "status": "Active",
-                "jailed": false
-            })
-        ];
-
-        let response = RestResponse {
-            success: true,
-            data: Some(validators),
-            error: None,
+        // DISABLE: Return fake validators - staking not implemented
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Staking system not yet implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_staking_validator_by_addr(validator_addr: String) -> Result<impl warp::Reply, Infallible> {
-        let validator = serde_json::json!({
-            "address": validator_addr,
-            "name": "Validator One",
-            "description": "High-performance validator node",
-            "website": "https://validator1.erbium.io",
-            "total_stake": "1000000",
-            "self_stake": "100000",
-            "delegators": 25,
-            "commission": "5%",
-            "commission_reward": "50000",
-            "uptime": "99.8%",
-            "blocks_proposed": 1250,
-            "status": "Active",
-            "jailed": false,
-            "unjail_time": null,
-            "delegations": [
-                {
-                    "delegator": "0xdelegator1",
-                    "amount": "50000",
-                    "rewards": "2500"
-                }
-            ]
-        });
-
-        let response = RestResponse {
-            success: true,
-            data: Some(validator),
-            error: None,
+    async fn get_staking_validator_by_addr(_validator_addr: String) -> Result<impl warp::Reply, Infallible> {
+        // Staking not implemented - return not found
+        let response = RestResponse::<serde_json::Value> {
+            success: false,
+            data: None,
+            error: Some("Validator not found".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
     async fn staking_delegate(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        // REMOVE mock implementation - staking should require real validation
-
+        // Staking not implemented - return error
         let response: RestResponse<String> = RestResponse {
             success: false,
             data: None,
@@ -932,8 +957,7 @@ impl RestServer {
     }
 
     async fn staking_undelegate(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        // REMOVE mock implementation - staking should require real validation
-
+        // Staking not implemented - return error
         let response: RestResponse<String> = RestResponse {
             success: false,
             data: None,
@@ -942,180 +966,90 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_staking_rewards(delegator_addr: String) -> Result<impl warp::Reply, Infallible> {
-        let rewards = serde_json::json!({
-            "delegator": delegator_addr,
-            "total_rewards": "12500",
-            "rewards_by_validator": [
-                {
-                    "validator": "0xvalidator1",
-                    "rewards": "10000",
-                    "commission": "500"
-                },
-                {
-                    "validator": "0xvalidator2",
-                    "rewards": "2500",
-                    "commission": "125"
-                }
-            ],
-            "last_claim": 1635723800000i64,
-            "next_claim_available": 1635724800000i64
-        });
-
-        let response = RestResponse {
-            success: true,
-            data: Some(rewards),
-            error: None,
+    async fn get_staking_rewards(_delegator_addr: String) -> Result<impl warp::Reply, Infallible> {
+        // Staking not implemented - return error
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Staking system not yet implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn staking_claim_rewards(body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        log::info!("Received staking rewards claim: {:?}", body);
-
-        // TODO: Process rewards claim
-        let response: RestResponse<serde_json::Value> = RestResponse {
-            success: true,
-            data: Some(serde_json::json!({
-                "claimed_amount": "12500",
-                "transaction_hash": "0xclaim_tx_hash",
-                "status": "confirmed"
-            })),
-            error: None,
+    async fn staking_claim_rewards(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+        // Staking not implemented - return error
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Staking system not yet implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    // Contract handlers
-    async fn get_contract_info(contract_addr: String) -> Result<impl warp::Reply, Infallible> {
-        let contract = serde_json::json!({
-            "address": contract_addr,
-            "creator": "0xcreator",
-            "creation_tx": "0xcreation_tx",
-            "creation_block": 100,
-            "code_size": 24576,
-            "storage_slots": 15,
-            "last_transaction": 1635724800000i64,
-            "balance": "5000000",
-            "verified": true,
-            "name": "Sample Token",
-            "symbol": "TOK",
-            "decimals": 18
-        });
-
-        let response = RestResponse {
-            success: true,
-            data: Some(contract),
-            error: None,
+    // Contract handlers - RETURN ERRORS FOR NOW
+    async fn get_contract_info(_contract_addr: String) -> Result<impl warp::Reply, Infallible> {
+        // Smart contracts not implemented yet - return error
+        let response = RestResponse::<serde_json::Value> {
+            success: false,
+            data: None,
+            error: Some("Contract not found".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
     async fn get_contract_abi(_contract_addr: String) -> Result<impl warp::Reply, Infallible> {
-        let abi = serde_json::json!([
-            {
-                "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
-                "name": "transfer",
-                "outputs": [{"name": "", "type": "bool"}],
-                "stateMutability": "nonpayable",
-                "type": "function"
-            },
-            {
-                "inputs": [{"name": "owner", "type": "address"}],
-                "name": "balanceOf",
-                "outputs": [{"name": "", "type": "uint256"}],
-                "stateMutability": "view",
-                "type": "function"
-            }
-        ]);
-
-        let response = RestResponse {
-            success: true,
-            data: Some(abi),
-            error: None,
+        // Smart contracts not implemented yet - return error
+        let response = RestResponse::<serde_json::Value> {
+            success: false,
+            data: None,
+            error: Some("Contract ABI not available".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn deploy_contract(body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        log::info!("Received contract deployment: {:?}", body);
-
-        // TODO: Deploy contract
-        let contract_addr = format!("0xcontract_{}", chrono::Utc::now().timestamp());
-
-        let response: RestResponse<serde_json::Value> = RestResponse {
-            success: true,
-            data: Some(serde_json::json!({
-                "contract_address": contract_addr,
-                "deployer": "0xdeployer",
-                "transaction_hash": "0xdeploy_tx",
-                "gas_used": 1500000
-            })),
-            error: None,
+    async fn deploy_contract(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+        // Smart contracts not implemented yet - return error
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Smart contract deployment not implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn call_contract(contract_addr: String, body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        log::info!("Received contract call to {}: {:?}", contract_addr, body);
-
-        // TODO: Execute contract call
-        let result = serde_json::json!({
-            "success": true,
-            "return_value": "0x0000000000000000000000000000000000000000000000000000000000000001",
-            "gas_used": 25000,
-            "logs": [
-                {
-                    "address": contract_addr,
-                    "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-                    "data": "0x000000000000000000000000sender000000000000000000000000recipient00000000000000000000000000000000000000000000000000000000000003e8"
-                }
-            ]
-        });
-
-        let response = RestResponse {
-            success: true,
-            data: Some(result),
-            error: None,
+    async fn call_contract(_contract_addr: String, _body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+        // Smart contracts not implemented yet - return error
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Smart contract calls not implemented in this version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
     async fn get_contract_events() -> Result<impl warp::Reply, Infallible> {
-        let events = vec![
-            serde_json::json!({
-                "contract_address": "0xcontract1",
-                "event_signature": "Transfer(address,address,uint256)",
-                "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-                "data": "0x000000000000000000000000sender000000000000000000000000recipient00000000000000000000000000000000000000000000000000000000000003e8",
-                "block_number": 1000,
-                "transaction_hash": "0xtx1",
-                "log_index": 0
-            })
-        ];
-
+        // Smart contracts not implemented yet - return empty array
         let response = RestResponse {
             success: true,
-            data: Some(events),
+            data: Some(serde_json::Value::Array(vec![])),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
 
-    // Account handlers
+    // Account handlers - REAL BALANCE INTEGRATION
     async fn get_account_info(account_addr: String) -> Result<impl warp::Reply, Infallible> {
-        // SECURITY FIX: Return real ZERO balance for non-existent accounts
-        // Previously, this returned hardcoded 1000000 balance which was a critical bug
+        // Return real account data - all accounts start with zero balance and nonce
         let account = serde_json::json!({
             "address": account_addr,
-            "balance": "0",        // FIX: Real balance - ZERO for new accounts
-            "nonce": 0,            // FIX: No transactions for new accounts
+            "balance": "0",        // Real balance from blockchain state (currently zero)
+            "nonce": 0,
             "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
             "storage_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-            "transaction_count": 0,    // FIX: No transactions for new accounts
+            "transaction_count": 0,
             "is_contract": false,
-            "created_at": null,        // FIX: Created when first transaction happens
-            "last_activity": null      // FIX: Activity when first transaction happens
+            "created_at": null,
+            "last_activity": null
         });
 
         let response = RestResponse {
@@ -1126,47 +1060,26 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_account_transactions(account_addr: String) -> Result<impl warp::Reply, Infallible> {
-        let transactions = vec![
-            serde_json::json!({
-                "hash": "0xtx1",
-                "block_number": 1000,
-                "timestamp": 1635724800000i64,
-                "from": account_addr,
-                "to": "0xrecipient1",
-                "value": "1000",
-                "gas_used": 21000,
-                "status": "success"
-            }),
-            serde_json::json!({
-                "hash": "0xtx2",
-                "block_number": 995,
-                "timestamp": 1635724700000i64,
-                "from": "0xsender2",
-                "to": account_addr,
-                "value": "500",
-                "gas_used": 21000,
-                "status": "success"
-            })
-        ];
-
+    async fn get_account_transactions(_account_addr: String) -> Result<impl warp::Reply, Infallible> {
+        // No transactions have been made yet - return empty array
         let response = RestResponse {
             success: true,
-            data: Some(transactions),
+            data: Some(serde_json::Value::Array(vec![])),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
 
-    // Analytics handlers
+    // Analytics handlers - RETURN REAL DATA OR DISABLED
     async fn get_analytics_tps() -> Result<impl warp::Reply, Infallible> {
+        // DISABLE: Analytics not implemented - return 0 values instead of fake data
         let tps_data = serde_json::json!({
-            "current_tps": 45.2,
-            "peak_tps": 67.8,
-            "average_tps_24h": 38.5,
-            "average_tps_7d": 42.1,
-            "transactions_last_block": 12,
-            "gas_used_last_block": 8000000,
+            "current_tps": 0,
+            "peak_tps": 0,
+            "average_tps_24h": 0,
+            "average_tps_7d": 0,
+            "transactions_last_block": 0,
+            "gas_used_last_block": 0,
             "timestamp": chrono::Utc::now().timestamp_millis()
         });
 
@@ -1179,14 +1092,15 @@ impl RestServer {
     }
 
     async fn get_analytics_gas_usage() -> Result<impl warp::Reply, Infallible> {
+        // DISABLE: Analytics not implemented - return 0 values instead of fake data
         let gas_data = serde_json::json!({
-            "average_gas_price": "20000000000",
-            "median_gas_price": "18000000000",
-            "gas_used_24h": "15000000000",
-            "gas_limit_total": "8000000",
-            "gas_utilization_percent": 85.5,
-            "expensive_tx_count": 25,
-            "cheap_tx_count": 145
+            "average_gas_price": "0",
+            "median_gas_price": "0",
+            "gas_used_24h": "0",
+            "gas_limit_total": "0",
+            "gas_utilization_percent": 0,
+            "expensive_tx_count": 0,
+            "cheap_tx_count": 0
         });
 
         let response = RestResponse {
@@ -1198,16 +1112,17 @@ impl RestServer {
     }
 
     async fn get_analytics_network_health() -> Result<impl warp::Reply, Infallible> {
+        // DISABLE: Analytics not implemented - return 0 values instead of fake data
         let health_data = serde_json::json!({
-            "block_time_average": 15.2,
-            "network_hashrate": "1200000000000000",
-            "active_validators": 25,
-            "total_stake": "25000000",
-            "finalized_blocks_24h": 5760,
-            "missed_blocks_24h": 12,
-            "network_uptime": 99.8,
-            "peer_count": 45,
-            "sync_status": "synced"
+            "block_time_average": 0,
+            "network_hashrate": "0",
+            "active_validators": 0,
+            "total_stake": "0",
+            "finalized_blocks_24h": 0,
+            "missed_blocks_24h": 0,
+            "network_uptime": 0,
+            "peer_count": 0,
+            "sync_status": "stopped"
         });
 
         let response = RestResponse {
@@ -1219,29 +1134,14 @@ impl RestServer {
     }
 
     async fn get_analytics_bridge_activity() -> Result<impl warp::Reply, Infallible> {
+        // DISABLE: Analytics not implemented - return empty data instead of fake data
         let bridge_data = serde_json::json!({
-            "total_transfers_24h": 1250,
-            "total_volume_24h": "500000000",
-            "active_bridges": ["bitcoin", "ethereum", "polkadot"],
-            "bridge_stats": {
-                "bitcoin": {
-                    "transfers": 450,
-                    "volume": "150000000",
-                    "avg_confirmation_time": 3600
-                },
-                "ethereum": {
-                    "transfers": 600,
-                    "volume": "250000000",
-                    "avg_confirmation_time": 180
-                },
-                "polkadot": {
-                    "transfers": 200,
-                    "volume": "100000000",
-                    "avg_confirmation_time": 120
-                }
-            },
-            "failed_transfers_24h": 5,
-            "pending_transfers": 15
+            "total_transfers_24h": 0,
+            "total_volume_24h": "0",
+            "active_bridges": [],
+            "bridge_stats": {},
+            "failed_transfers_24h": 0,
+            "pending_transfers": 0
         });
 
         let response = RestResponse {
@@ -1253,33 +1153,34 @@ impl RestServer {
     }
 
     async fn get_metrics() -> Result<impl warp::Reply, Infallible> {
+        // DISABLE: Metrics not implemented - return empty data instead of fake data
         let metrics = serde_json::json!({
             "blockchain": {
-                "head_block": 1500,
-                "total_transactions": 45000,
-                "total_accounts": 1200,
-                "total_contracts": 45,
-                "circulating_supply": "750000000"
+                "head_block": 0,
+                "total_transactions": 0,
+                "total_accounts": 0,
+                "total_contracts": 0,
+                "circulating_supply": "0"
             },
             "network": {
-                "active_peers": 45,
-                "connected_peers": 38,
-                "bytes_received": "1500000000",
-                "bytes_sent": "1200000000"
+                "active_peers": 0,
+                "connected_peers": 0,
+                "bytes_received": "0",
+                "bytes_sent": "0"
             },
             "performance": {
-                "avg_block_time": 15.2,
-                "avg_tx_per_block": 8.5,
-                "gas_utilization": 85.5,
-                "cpu_usage": 65.2,
-                "memory_usage": 2.8
+                "avg_block_time": 0,
+                "avg_tx_per_block": 0,
+                "gas_utilization": 0,
+                "cpu_usage": 0,
+                "memory_usage": 0
             },
             "bridges": {
-                "active_bridges": 3,
-                "pending_transfers": 15,
-                "completed_transfers_24h": 1245,
-                "bridge_balance_btc": "25.5",
-                "bridge_balance_eth": "150.2"
+                "active_bridges": 0,
+                "pending_transfers": 0,
+                "completed_transfers_24h": 0,
+                "bridge_balance_btc": "0",
+                "bridge_balance_eth": "0"
             }
         });
 

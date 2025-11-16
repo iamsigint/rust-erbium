@@ -117,7 +117,20 @@ impl NodeManager {
     async fn start_rest_api(&mut self) -> Result<()> {
         use crate::api::rest::RestServer;
 
-        let rest_server = RestServer::new(8080)?;
+        let mut rest_server = RestServer::new(8080)?;
+
+        // Inject dependencies from the NodeManager
+        if let Some(blockchain) = &self.blockchain {
+            rest_server = rest_server.with_persistent_blockchain(blockchain.clone());
+        }
+
+        if let Some(bridge_manager) = &self.bridge_manager {
+            rest_server = rest_server.with_bridge_manager(bridge_manager.clone());
+        }
+
+        if let Some(p2p_network) = &self.p2p_network {
+            rest_server = rest_server.with_p2p_network(p2p_network.clone());
+        }
 
         let handle = tokio::spawn(async move {
             log::info!("Starting REST API server on port 8080");
