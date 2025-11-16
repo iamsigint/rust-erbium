@@ -920,36 +920,24 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn staking_delegate(body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        log::info!("Received staking delegation: {:?}", body);
+    async fn staking_delegate(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+        // REMOVE mock implementation - staking should require real validation
 
-        // TODO: Process delegation
-        let delegation_id = format!("delegation_{}", chrono::Utc::now().timestamp());
-
-        let response: RestResponse<serde_json::Value> = RestResponse {
-            success: true,
-            data: Some(serde_json::json!({
-                "delegation_id": delegation_id,
-                "status": "confirmed",
-                "voting_power_granted": 50000
-            })),
-            error: None,
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Staking delegation not implemented in current version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
 
-    async fn staking_undelegate(body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
-        log::info!("Received staking undelegation: {:?}", body);
+    async fn staking_undelegate(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+        // REMOVE mock implementation - staking should require real validation
 
-        // TODO: Process undelegation
-        let response: RestResponse<serde_json::Value> = RestResponse {
-            success: true,
-            data: Some(serde_json::json!({
-                "status": "initiated",
-                "unbonding_period": "21 days",
-                "completion_time": 1635724800000i64 + (21 * 24 * 60 * 60 * 1000)
-            })),
-            error: None,
+        let response: RestResponse<String> = RestResponse {
+            success: false,
+            data: None,
+            error: Some("Staking undelegation not implemented in current version".to_string()),
         };
         Ok(warp::reply::json(&response))
     }
@@ -1116,16 +1104,18 @@ impl RestServer {
 
     // Account handlers
     async fn get_account_info(account_addr: String) -> Result<impl warp::Reply, Infallible> {
+        // SECURITY FIX: Return real ZERO balance for non-existent accounts
+        // Previously, this returned hardcoded 1000000 balance which was a critical bug
         let account = serde_json::json!({
             "address": account_addr,
-            "balance": "1000000",
-            "nonce": 5,
+            "balance": "0",        // FIX: Real balance - ZERO for new accounts
+            "nonce": 0,            // FIX: No transactions for new accounts
             "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
             "storage_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-            "transaction_count": 15,
+            "transaction_count": 0,    // FIX: No transactions for new accounts
             "is_contract": false,
-            "created_at": 1635723800000i64,
-            "last_activity": 1635724800000i64
+            "created_at": null,        // FIX: Created when first transaction happens
+            "last_activity": null      // FIX: Activity when first transaction happens
         });
 
         let response = RestResponse {
