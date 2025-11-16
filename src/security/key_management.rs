@@ -7,12 +7,12 @@
 //! - Key backup and recovery
 //! - Cryptographic key lifecycle management
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock;
 
 /// Key management configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,19 +93,32 @@ impl KeyManagementEngine {
         // Start background tasks
         let _ = self.start_background_tasks().await;
 
-        log::info!("Key management system initialized with {} keys",
-                  self.key_store.read().await.len());
+        log::info!(
+            "Key management system initialized with {} keys",
+            self.key_store.read().await.len()
+        );
         Ok(())
     }
 
     /// Generate a new cryptographic key
-    pub async fn generate_key(&self, key_type: KeyType, purpose: KeyPurpose, metadata: KeyMetadata) -> Result<String> {
+    pub async fn generate_key(
+        &self,
+        key_type: KeyType,
+        purpose: KeyPurpose,
+        metadata: KeyMetadata,
+    ) -> Result<String> {
         if !self.config.enabled {
-            return Err(BlockchainError::Security("Key management is disabled".to_string()));
+            return Err(BlockchainError::Security(
+                "Key management is disabled".to_string(),
+            ));
         }
 
-        let key_id = format!("key_{}_{}_{}", key_type.to_string().to_lowercase(),
-                           purpose.to_string().to_lowercase(), current_timestamp());
+        let key_id = format!(
+            "key_{}_{}_{}",
+            key_type.to_string().to_lowercase(),
+            purpose.to_string().to_lowercase(),
+            current_timestamp()
+        );
 
         // Generate key based on configuration
         let _key_material = if let Some(ref hsm) = self.hsm_interface {
@@ -135,7 +148,12 @@ impl KeyManagementEngine {
             self.backup_manager.schedule_backup(&key_id).await?;
         }
 
-        log::info!("Generated new {} key: {} for {}", key_type.to_string(), key_id, purpose.to_string());
+        log::info!(
+            "Generated new {} key: {} for {}",
+            key_type.to_string(),
+            key_id,
+            purpose.to_string()
+        );
         Ok(key_id)
     }
 
@@ -145,7 +163,10 @@ impl KeyManagementEngine {
 
         if let Some(metadata) = store.get(key_id) {
             if metadata.status != KeyStatus::Active {
-                return Err(BlockchainError::Security(format!("Key {} is not active", key_id)));
+                return Err(BlockchainError::Security(format!(
+                    "Key {} is not active",
+                    key_id
+                )));
             }
 
             // Check if key needs rotation
@@ -176,7 +197,10 @@ impl KeyManagementEngine {
                 expires_at: metadata.expires_at,
             })
         } else {
-            Err(BlockchainError::Security(format!("Key {} not found", key_id)))
+            Err(BlockchainError::Security(format!(
+                "Key {} not found",
+                key_id
+            )))
         }
     }
 
@@ -191,11 +215,17 @@ impl KeyManagementEngine {
     }
 
     /// Verify signature with a specific key
-    pub async fn verify_signature(&self, key_id: &str, data: &[u8], signature: &[u8]) -> Result<bool> {
+    pub async fn verify_signature(
+        &self,
+        key_id: &str,
+        data: &[u8],
+        signature: &[u8],
+    ) -> Result<bool> {
         if let Some(ref hsm) = self.hsm_interface {
             hsm.verify_signature(key_id, data, signature).await
         } else {
-            self.verify_software_signature(key_id, data, signature).await
+            self.verify_software_signature(key_id, data, signature)
+                .await
         }
     }
 
@@ -204,31 +234,34 @@ impl KeyManagementEngine {
         log::info!("Rotating key: {}", key_id);
 
         let store = self.key_store.read().await;
-        let old_metadata = store.get(key_id)
+        let old_metadata = store
+            .get(key_id)
             .ok_or_else(|| BlockchainError::Security(format!("Key {} not found", key_id)))?
             .clone();
         drop(store);
 
         // Generate new key
-        let new_key_id = self.generate_key(
-            old_metadata.key_type.clone(),
-            old_metadata.purpose.clone(),
-            KeyMetadata {
-                key_id: "".to_string(),
-                key_type: old_metadata.key_type.clone(),
-                purpose: old_metadata.purpose.clone(),
-                created_at: 0,
-                expires_at: None,
-                status: KeyStatus::Active,
-                strength: old_metadata.strength,
-                algorithm: old_metadata.algorithm,
-                usage_count: 0,
-                last_used: None,
-                rotation_count: old_metadata.rotation_count + 1,
-                backup_status: BackupStatus::NotBackedUp,
-                rotated_at: None,
-            }
-        ).await?;
+        let new_key_id = self
+            .generate_key(
+                old_metadata.key_type.clone(),
+                old_metadata.purpose.clone(),
+                KeyMetadata {
+                    key_id: "".to_string(),
+                    key_type: old_metadata.key_type.clone(),
+                    purpose: old_metadata.purpose.clone(),
+                    created_at: 0,
+                    expires_at: None,
+                    status: KeyStatus::Active,
+                    strength: old_metadata.strength,
+                    algorithm: old_metadata.algorithm,
+                    usage_count: 0,
+                    last_used: None,
+                    rotation_count: old_metadata.rotation_count + 1,
+                    backup_status: BackupStatus::NotBackedUp,
+                    rotated_at: None,
+                },
+            )
+            .await?;
 
         // Mark old key as rotated
         {
@@ -244,22 +277,44 @@ impl KeyManagementEngine {
     }
 
     /// Create a multi-signature key set
-    pub async fn create_multi_sig_key(&self, key_type: KeyType, threshold: usize, total_keys: usize) -> Result<String> {
+    pub async fn create_multi_sig_key(
+        &self,
+        key_type: KeyType,
+        threshold: usize,
+        total_keys: usize,
+    ) -> Result<String> {
         if !self.config.multi_sig_enabled {
-            return Err(BlockchainError::Security("Multi-signature is disabled".to_string()));
+            return Err(BlockchainError::Security(
+                "Multi-signature is disabled".to_string(),
+            ));
         }
 
-        self.multi_sig_manager.create_multi_sig_key(key_type, threshold, total_keys).await
+        self.multi_sig_manager
+            .create_multi_sig_key(key_type, threshold, total_keys)
+            .await
     }
 
     /// Sign with multi-signature key
-    pub async fn multi_sig_sign(&self, multi_sig_id: &str, data: &[u8], signer_key_id: &str) -> Result<MultiSigSignature> {
-        self.multi_sig_manager.sign_with_key(multi_sig_id, data, signer_key_id).await
+    pub async fn multi_sig_sign(
+        &self,
+        multi_sig_id: &str,
+        data: &[u8],
+        signer_key_id: &str,
+    ) -> Result<MultiSigSignature> {
+        self.multi_sig_manager
+            .sign_with_key(multi_sig_id, data, signer_key_id)
+            .await
     }
 
     /// Combine multi-signature signatures
-    pub async fn combine_multi_sig(&self, multi_sig_id: &str, signatures: Vec<MultiSigSignature>) -> Result<Vec<u8>> {
-        self.multi_sig_manager.combine_signatures(multi_sig_id, signatures).await
+    pub async fn combine_multi_sig(
+        &self,
+        multi_sig_id: &str,
+        signatures: Vec<MultiSigSignature>,
+    ) -> Result<Vec<u8>> {
+        self.multi_sig_manager
+            .combine_signatures(multi_sig_id, signatures)
+            .await
     }
 
     /// Get key management statistics
@@ -267,9 +322,18 @@ impl KeyManagementEngine {
         let store = self.key_store.read().await;
 
         let total_keys = store.len();
-        let active_keys = store.values().filter(|k| k.status == KeyStatus::Active).count();
-        let rotated_keys = store.values().filter(|k| k.status == KeyStatus::Rotated).count();
-        let compromised_keys = store.values().filter(|k| k.status == KeyStatus::Compromised).count();
+        let active_keys = store
+            .values()
+            .filter(|k| k.status == KeyStatus::Active)
+            .count();
+        let rotated_keys = store
+            .values()
+            .filter(|k| k.status == KeyStatus::Rotated)
+            .count();
+        let compromised_keys = store
+            .values()
+            .filter(|k| k.status == KeyStatus::Compromised)
+            .count();
 
         let avg_rotation_count = if total_keys > 0 {
             store.values().map(|k| k.rotation_count).sum::<u64>() as f64 / total_keys as f64
@@ -309,7 +373,9 @@ impl KeyManagementEngine {
     async fn start_background_tasks(&self) -> Result<()> {
         // Start key rotation scheduler
         if self.config.key_rotation_enabled {
-            self.rotation_scheduler.start_scheduler(self.key_store.clone()).await?;
+            self.rotation_scheduler
+                .start_scheduler(self.key_store.clone())
+                .await?;
         }
 
         // Start backup scheduler
@@ -368,7 +434,12 @@ impl KeyManagementEngine {
         Ok(signature)
     }
 
-    async fn verify_software_signature(&self, key_id: &str, data: &[u8], signature: &[u8]) -> Result<bool> {
+    async fn verify_software_signature(
+        &self,
+        key_id: &str,
+        data: &[u8],
+        signature: &[u8],
+    ) -> Result<bool> {
         // Simple verification (for development only)
         Ok(signature.starts_with(data) && signature.ends_with(key_id.as_bytes()))
     }
@@ -558,7 +629,10 @@ impl KeyRotationScheduler {
         Self
     }
 
-    pub async fn start_scheduler(&self, _key_store: Arc<RwLock<HashMap<String, KeyMetadata>>>) -> Result<()> {
+    pub async fn start_scheduler(
+        &self,
+        _key_store: Arc<RwLock<HashMap<String, KeyMetadata>>>,
+    ) -> Result<()> {
         // TODO: Start background rotation task
         Ok(())
     }
@@ -572,15 +646,35 @@ impl MultiSigManager {
         Self
     }
 
-    pub async fn create_multi_sig_key(&self, key_type: KeyType, threshold: usize, total_keys: usize) -> Result<String> {
-        let multi_sig_id = format!("multisig_{}_{}_{}_{}", key_type.to_string().to_lowercase(),
-                                 threshold, total_keys, current_timestamp());
+    pub async fn create_multi_sig_key(
+        &self,
+        key_type: KeyType,
+        threshold: usize,
+        total_keys: usize,
+    ) -> Result<String> {
+        let multi_sig_id = format!(
+            "multisig_{}_{}_{}_{}",
+            key_type.to_string().to_lowercase(),
+            threshold,
+            total_keys,
+            current_timestamp()
+        );
 
-        log::info!("Created multi-signature key: {} (threshold: {}/{})", multi_sig_id, threshold, total_keys);
+        log::info!(
+            "Created multi-signature key: {} (threshold: {}/{})",
+            multi_sig_id,
+            threshold,
+            total_keys
+        );
         Ok(multi_sig_id)
     }
 
-    pub async fn sign_with_key(&self, _multi_sig_id: &str, data: &[u8], signer_key_id: &str) -> Result<MultiSigSignature> {
+    pub async fn sign_with_key(
+        &self,
+        _multi_sig_id: &str,
+        data: &[u8],
+        signer_key_id: &str,
+    ) -> Result<MultiSigSignature> {
         // TODO: Implement actual multi-sig signing
         Ok(MultiSigSignature {
             signer_key_id: signer_key_id.to_string(),
@@ -589,9 +683,17 @@ impl MultiSigManager {
         })
     }
 
-    pub async fn combine_signatures(&self, multi_sig_id: &str, signatures: Vec<MultiSigSignature>) -> Result<Vec<u8>> {
+    pub async fn combine_signatures(
+        &self,
+        multi_sig_id: &str,
+        signatures: Vec<MultiSigSignature>,
+    ) -> Result<Vec<u8>> {
         // TODO: Implement signature combination
-        log::info!("Combined {} signatures for multi-sig key: {}", signatures.len(), multi_sig_id);
+        log::info!(
+            "Combined {} signatures for multi-sig key: {}",
+            signatures.len(),
+            multi_sig_id
+        );
         Ok(vec![0u8; 64]) // Placeholder
     }
 }
@@ -599,15 +701,30 @@ impl MultiSigManager {
 // HSM Interface implementations (placeholders)
 pub struct YubiHSM2Interface;
 impl YubiHSM2Interface {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait::async_trait]
 impl HSMInterface for YubiHSM2Interface {
-    async fn connect(&self) -> Result<()> { Ok(()) }
-    async fn generate_key(&self, _key_type: KeyType, _key_id: &str) -> Result<Vec<u8>> { Ok(vec![0u8; 32]) }
-    async fn sign_data(&self, _key_id: &str, data: &[u8]) -> Result<Vec<u8>> { Ok(Vec::from(data)) }
-    async fn verify_signature(&self, _key_id: &str, _data: &[u8], _signature: &[u8]) -> Result<bool> { Ok(true) }
+    async fn connect(&self) -> Result<()> {
+        Ok(())
+    }
+    async fn generate_key(&self, _key_type: KeyType, _key_id: &str) -> Result<Vec<u8>> {
+        Ok(vec![0u8; 32])
+    }
+    async fn sign_data(&self, _key_id: &str, data: &[u8]) -> Result<Vec<u8>> {
+        Ok(Vec::from(data))
+    }
+    async fn verify_signature(
+        &self,
+        _key_id: &str,
+        _data: &[u8],
+        _signature: &[u8],
+    ) -> Result<bool> {
+        Ok(true)
+    }
     async fn get_key_info(&self, _key_id: &str) -> Result<KeyMetadata> {
         Ok(KeyMetadata {
             key_id: "test".to_string(),
@@ -629,15 +746,30 @@ impl HSMInterface for YubiHSM2Interface {
 
 pub struct AWSCloudHSMInterface;
 impl AWSCloudHSMInterface {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait::async_trait]
 impl HSMInterface for AWSCloudHSMInterface {
-    async fn connect(&self) -> Result<()> { Ok(()) }
-    async fn generate_key(&self, _key_type: KeyType, _key_id: &str) -> Result<Vec<u8>> { Ok(vec![0u8; 32]) }
-    async fn sign_data(&self, _key_id: &str, data: &[u8]) -> Result<Vec<u8>> { Ok(Vec::from(data)) }
-    async fn verify_signature(&self, _key_id: &str, _data: &[u8], _signature: &[u8]) -> Result<bool> { Ok(true) }
+    async fn connect(&self) -> Result<()> {
+        Ok(())
+    }
+    async fn generate_key(&self, _key_type: KeyType, _key_id: &str) -> Result<Vec<u8>> {
+        Ok(vec![0u8; 32])
+    }
+    async fn sign_data(&self, _key_id: &str, data: &[u8]) -> Result<Vec<u8>> {
+        Ok(Vec::from(data))
+    }
+    async fn verify_signature(
+        &self,
+        _key_id: &str,
+        _data: &[u8],
+        _signature: &[u8],
+    ) -> Result<bool> {
+        Ok(true)
+    }
     async fn get_key_info(&self, _key_id: &str) -> Result<KeyMetadata> {
         Ok(KeyMetadata {
             key_id: "test".to_string(),
@@ -659,15 +791,30 @@ impl HSMInterface for AWSCloudHSMInterface {
 
 pub struct AzureKeyVaultInterface;
 impl AzureKeyVaultInterface {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait::async_trait]
 impl HSMInterface for AzureKeyVaultInterface {
-    async fn connect(&self) -> Result<()> { Ok(()) }
-    async fn generate_key(&self, _key_type: KeyType, _key_id: &str) -> Result<Vec<u8>> { Ok(vec![0u8; 32]) }
-    async fn sign_data(&self, _key_id: &str, data: &[u8]) -> Result<Vec<u8>> { Ok(Vec::from(data)) }
-    async fn verify_signature(&self, _key_id: &str, _data: &[u8], _signature: &[u8]) -> Result<bool> { Ok(true) }
+    async fn connect(&self) -> Result<()> {
+        Ok(())
+    }
+    async fn generate_key(&self, _key_type: KeyType, _key_id: &str) -> Result<Vec<u8>> {
+        Ok(vec![0u8; 32])
+    }
+    async fn sign_data(&self, _key_id: &str, data: &[u8]) -> Result<Vec<u8>> {
+        Ok(Vec::from(data))
+    }
+    async fn verify_signature(
+        &self,
+        _key_id: &str,
+        _data: &[u8],
+        _signature: &[u8],
+    ) -> Result<bool> {
+        Ok(true)
+    }
     async fn get_key_info(&self, _key_id: &str) -> Result<KeyMetadata> {
         Ok(KeyMetadata {
             key_id: "test".to_string(),
@@ -689,15 +836,30 @@ impl HSMInterface for AzureKeyVaultInterface {
 
 pub struct GemaltoHSMInterface;
 impl GemaltoHSMInterface {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait::async_trait]
 impl HSMInterface for GemaltoHSMInterface {
-    async fn connect(&self) -> Result<()> { Ok(()) }
-    async fn generate_key(&self, _key_type: KeyType, _key_id: &str) -> Result<Vec<u8>> { Ok(vec![0u8; 32]) }
-    async fn sign_data(&self, _key_id: &str, data: &[u8]) -> Result<Vec<u8>> { Ok(Vec::from(data)) }
-    async fn verify_signature(&self, _key_id: &str, _data: &[u8], _signature: &[u8]) -> Result<bool> { Ok(true) }
+    async fn connect(&self) -> Result<()> {
+        Ok(())
+    }
+    async fn generate_key(&self, _key_type: KeyType, _key_id: &str) -> Result<Vec<u8>> {
+        Ok(vec![0u8; 32])
+    }
+    async fn sign_data(&self, _key_id: &str, data: &[u8]) -> Result<Vec<u8>> {
+        Ok(Vec::from(data))
+    }
+    async fn verify_signature(
+        &self,
+        _key_id: &str,
+        _data: &[u8],
+        _signature: &[u8],
+    ) -> Result<bool> {
+        Ok(true)
+    }
     async fn get_key_info(&self, _key_id: &str) -> Result<KeyMetadata> {
         Ok(KeyMetadata {
             key_id: "test".to_string(),
@@ -758,7 +920,9 @@ mod tests {
             rotated_at: None,
         };
 
-        let result = engine.generate_key(KeyType::Ed25519, KeyPurpose::Signing, metadata).await;
+        let result = engine
+            .generate_key(KeyType::Ed25519, KeyPurpose::Signing, metadata)
+            .await;
         assert!(result.is_ok());
 
         let key_id = result.unwrap();
@@ -786,7 +950,10 @@ mod tests {
             rotated_at: None,
         };
 
-        let key_id = engine.generate_key(KeyType::Ed25519, KeyPurpose::Signing, metadata).await.unwrap();
+        let key_id = engine
+            .generate_key(KeyType::Ed25519, KeyPurpose::Signing, metadata)
+            .await
+            .unwrap();
         let handle_result = engine.get_key(&key_id).await;
 
         assert!(handle_result.is_ok());

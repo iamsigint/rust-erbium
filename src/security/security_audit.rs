@@ -3,9 +3,9 @@
 //! This module performs comprehensive security audits of all core components
 //! including cryptography, consensus, networking, storage, and smart contracts.
 
-use crate::utils::error::Result;
 use crate::crypto::{CryptoManager, Dilithium};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::Result;
+use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Security audit result
@@ -95,7 +95,10 @@ impl SecurityAuditor {
         // Generate comprehensive report
         let report = self.generate_audit_report();
 
-        log::info!("Security audit completed. Found {} issues", report.total_issues());
+        log::info!(
+            "Security audit completed. Found {} issues",
+            report.total_issues()
+        );
 
         Ok(report)
     }
@@ -120,11 +123,9 @@ impl SecurityAuditor {
         // Test signature verification
         let message = b"Hello, World!";
         let signature = keypair.sign(message)?;
-        let is_valid = self.crypto_manager.verify_signature(
-            &keypair.public_key,
-            message,
-            &signature
-        )?;
+        let is_valid =
+            self.crypto_manager
+                .verify_signature(&keypair.public_key, message, &signature)?;
 
         if is_valid {
             self.record_result(SecurityAuditResult {
@@ -191,7 +192,8 @@ impl SecurityAuditor {
             vulnerability_type: VulnerabilityType::Cryptographic,
             description: "Long-range attack protection needs verification".to_string(),
             impact: "Potential for historical chain reorganization".to_string(),
-            recommendation: "Implement checkpointing or increase difficulty adjustment frequency".to_string(),
+            recommendation: "Implement checkpointing or increase difficulty adjustment frequency"
+                .to_string(),
             status: AuditStatus::Warning,
         });
 
@@ -222,7 +224,8 @@ impl SecurityAuditor {
             vulnerability_type: VulnerabilityType::DenialOfService,
             description: "DDoS protection mechanisms need implementation".to_string(),
             impact: "Network can be overwhelmed by malicious traffic".to_string(),
-            recommendation: "Implement rate limiting, connection limits, and traffic analysis".to_string(),
+            recommendation: "Implement rate limiting, connection limits, and traffic analysis"
+                .to_string(),
             status: AuditStatus::Warning,
         });
 
@@ -232,9 +235,11 @@ impl SecurityAuditor {
             component: "Network".to_string(),
             severity: SecuritySeverity::Info,
             vulnerability_type: VulnerabilityType::InformationDisclosure,
-            description: "Noise protocol encryption implemented for all P2P communications".to_string(),
+            description: "Noise protocol encryption implemented for all P2P communications"
+                .to_string(),
             impact: "Network traffic is encrypted and authenticated".to_string(),
-            recommendation: "Noise protocol provides adequate protection against MITM attacks".to_string(),
+            recommendation: "Noise protocol provides adequate protection against MITM attacks"
+                .to_string(),
             status: AuditStatus::Pass,
         });
 
@@ -244,9 +249,12 @@ impl SecurityAuditor {
             component: "Network".to_string(),
             severity: SecuritySeverity::Info,
             vulnerability_type: VulnerabilityType::Authentication,
-            description: "Peer authentication implemented with Noise protocol and trust levels".to_string(),
+            description: "Peer authentication implemented with Noise protocol and trust levels"
+                .to_string(),
             impact: "Network maintains authenticated peer connections".to_string(),
-            recommendation: "Peer authentication provides adequate protection against malicious nodes".to_string(),
+            recommendation:
+                "Peer authentication provides adequate protection against malicious nodes"
+                    .to_string(),
             status: AuditStatus::Pass,
         });
 
@@ -427,11 +435,15 @@ impl SecurityAuditor {
 
     /// Calculate overall risk level
     fn calculate_overall_risk(&self) -> SecurityRiskLevel {
-        let critical_count = self.audit_results.iter()
+        let critical_count = self
+            .audit_results
+            .iter()
             .filter(|r| r.severity == SecuritySeverity::Critical && r.status == AuditStatus::Fail)
             .count();
 
-        let high_count = self.audit_results.iter()
+        let high_count = self
+            .audit_results
+            .iter()
             .filter(|r| r.severity == SecuritySeverity::High && r.status != AuditStatus::Pass)
             .count();
 
@@ -455,22 +467,21 @@ impl SecurityAuditor {
         sorted_results.sort_by(|a, b| {
             // Critical issues first, then by severity
             match (&a.status, &b.status) {
-                (AuditStatus::Fail, AuditStatus::Fail) => {
-                    match (&a.severity, &b.severity) {
-                        (SecuritySeverity::Critical, _) => std::cmp::Ordering::Less,
-                        (_, SecuritySeverity::Critical) => std::cmp::Ordering::Greater,
-                        (SecuritySeverity::High, _) => std::cmp::Ordering::Less,
-                        (_, SecuritySeverity::High) => std::cmp::Ordering::Greater,
-                        _ => std::cmp::Ordering::Equal,
-                    }
-                }
+                (AuditStatus::Fail, AuditStatus::Fail) => match (&a.severity, &b.severity) {
+                    (SecuritySeverity::Critical, _) => std::cmp::Ordering::Less,
+                    (_, SecuritySeverity::Critical) => std::cmp::Ordering::Greater,
+                    (SecuritySeverity::High, _) => std::cmp::Ordering::Less,
+                    (_, SecuritySeverity::High) => std::cmp::Ordering::Greater,
+                    _ => std::cmp::Ordering::Equal,
+                },
                 (AuditStatus::Fail, _) => std::cmp::Ordering::Less,
                 (_, AuditStatus::Fail) => std::cmp::Ordering::Greater,
                 _ => std::cmp::Ordering::Equal,
             }
         });
 
-        for result in sorted_results.iter().take(10) { // Top 10 recommendations
+        for result in sorted_results.iter().take(10) {
+            // Top 10 recommendations
             if result.status != AuditStatus::Pass {
                 recommendations.push(format!(
                     "[{}] {}: {}",

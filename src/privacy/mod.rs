@@ -1,7 +1,7 @@
-pub mod zk_circuits;
 pub mod confidential_tx;
 pub mod range_proofs;
 pub mod stealth_addresses;
+pub mod zk_circuits;
 
 use serde::{Deserialize, Serialize};
 

@@ -1,8 +1,8 @@
 //! DAO (Decentralized Autonomous Organization) contract implementation
 
 use crate::core::types::Address;
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// DAO contract with governance features
@@ -13,8 +13,8 @@ pub struct DAOContract {
     pub members: HashMap<Address, MemberInfo>,
     pub proposals: Vec<DAOProposal>,
     pub governance_token: Option<Address>, // Address of governance token contract
-    pub quorum_percentage: u8, // Minimum percentage of total votes needed
-    pub voting_period: u64, // Voting period in blocks
+    pub quorum_percentage: u8,             // Minimum percentage of total votes needed
+    pub voting_period: u64,                // Voting period in blocks
     pub proposal_count: u64,
 }
 
@@ -22,7 +22,7 @@ pub struct DAOContract {
 pub struct MemberInfo {
     pub address: Address,
     pub voting_power: u64,
-    pub joined_at: u64, // Block number when joined
+    pub joined_at: u64,  // Block number when joined
     pub reputation: u32, // Reputation score
 }
 
@@ -35,9 +35,9 @@ pub struct DAOProposal {
     pub votes_for: u64,
     pub votes_against: u64,
     pub status: ProposalStatus,
-    pub created_at: u64, // Block number
-    pub voting_ends_at: u64, // Block number
-    pub executed_at: Option<u64>, // Block number
+    pub created_at: u64,                // Block number
+    pub voting_ends_at: u64,            // Block number
+    pub executed_at: Option<u64>,       // Block number
     pub voters: HashMap<Address, bool>, // address -> approved
 }
 
@@ -72,12 +72,15 @@ impl DAOContract {
         current_block: u64,
     ) -> Self {
         let mut members = HashMap::new();
-        members.insert(founder.clone(), MemberInfo {
-            address: founder,
-            voting_power: 100, // Initial voting power for founder
-            joined_at: current_block,
-            reputation: 100,
-        });
+        members.insert(
+            founder.clone(),
+            MemberInfo {
+                address: founder,
+                voting_power: 100, // Initial voting power for founder
+                joined_at: current_block,
+                reputation: 100,
+            },
+        );
 
         Self {
             name,
@@ -92,17 +95,27 @@ impl DAOContract {
     }
 
     /// Add a new member to the DAO
-    pub fn add_member(&mut self, member: Address, voting_power: u64, current_block: u64) -> Result<()> {
+    pub fn add_member(
+        &mut self,
+        member: Address,
+        voting_power: u64,
+        current_block: u64,
+    ) -> Result<()> {
         if self.members.contains_key(&member) {
-            return Err(BlockchainError::Governance("Member already exists".to_string()));
+            return Err(BlockchainError::Governance(
+                "Member already exists".to_string(),
+            ));
         }
 
-        self.members.insert(member.clone(), MemberInfo {
-            address: member,
-            voting_power,
-            joined_at: current_block,
-            reputation: 50, // Default reputation
-        });
+        self.members.insert(
+            member.clone(),
+            MemberInfo {
+                address: member,
+                voting_power,
+                joined_at: current_block,
+                reputation: 50, // Default reputation
+            },
+        );
 
         Ok(())
     }
@@ -127,7 +140,9 @@ impl DAOContract {
     ) -> Result<u64> {
         // Check if proposer is a member
         if !self.members.contains_key(proposer) {
-            return Err(BlockchainError::Governance("Only members can create proposals".to_string()));
+            return Err(BlockchainError::Governance(
+                "Only members can create proposals".to_string(),
+            ));
         }
 
         self.proposal_count += 1;
@@ -152,29 +167,45 @@ impl DAOContract {
     }
 
     /// Vote on a proposal
-    pub fn vote(&mut self, voter: &Address, proposal_id: u64, approve: bool, current_block: u64) -> Result<()> {
+    pub fn vote(
+        &mut self,
+        voter: &Address,
+        proposal_id: u64,
+        approve: bool,
+        current_block: u64,
+    ) -> Result<()> {
         // Check if voter is a member
-        let member_info = self.members.get(voter)
+        let member_info = self
+            .members
+            .get(voter)
             .ok_or_else(|| BlockchainError::Governance("Not a DAO member".to_string()))?;
 
         // Find the proposal
-        let proposal = self.proposals.iter_mut()
+        let proposal = self
+            .proposals
+            .iter_mut()
             .find(|p| p.id == proposal_id)
             .ok_or_else(|| BlockchainError::Governance("Proposal not found".to_string()))?;
 
         // Check if proposal is active
         if proposal.status != ProposalStatus::Active {
-            return Err(BlockchainError::Governance("Proposal not active".to_string()));
+            return Err(BlockchainError::Governance(
+                "Proposal not active".to_string(),
+            ));
         }
 
         // Check if voting period has ended
         if current_block > proposal.voting_ends_at {
-            return Err(BlockchainError::Governance("Voting period has ended".to_string()));
+            return Err(BlockchainError::Governance(
+                "Voting period has ended".to_string(),
+            ));
         }
 
         // Check if member already voted
         if proposal.voters.contains_key(voter) {
-            return Err(BlockchainError::Governance("Member already voted".to_string()));
+            return Err(BlockchainError::Governance(
+                "Member already voted".to_string(),
+            ));
         }
 
         // Record the vote
@@ -191,18 +222,24 @@ impl DAOContract {
 
     /// Execute a proposal after voting period
     pub fn execute_proposal(&mut self, proposal_id: u64, current_block: u64) -> Result<()> {
-        let proposal = self.proposals.iter_mut()
+        let proposal = self
+            .proposals
+            .iter_mut()
             .find(|p| p.id == proposal_id)
             .ok_or_else(|| BlockchainError::Governance("Proposal not found".to_string()))?;
 
         // Check if proposal is active
         if proposal.status != ProposalStatus::Active {
-            return Err(BlockchainError::Governance("Proposal not active".to_string()));
+            return Err(BlockchainError::Governance(
+                "Proposal not active".to_string(),
+            ));
         }
 
         // Check if voting period has ended
         if current_block <= proposal.voting_ends_at {
-            return Err(BlockchainError::Governance("Voting period not ended".to_string()));
+            return Err(BlockchainError::Governance(
+                "Voting period not ended".to_string(),
+            ));
         }
 
         // Calculate total possible votes
@@ -213,7 +250,9 @@ impl DAOContract {
         let quorum_threshold = (total_voting_power * self.quorum_percentage as u64) / 100;
         if total_votes < quorum_threshold {
             proposal.status = ProposalStatus::Rejected;
-            return Err(BlockchainError::Governance("Quorum not reached".to_string()));
+            return Err(BlockchainError::Governance(
+                "Quorum not reached".to_string(),
+            ));
         }
 
         // Determine outcome
@@ -285,7 +324,7 @@ mod tests {
             "Test DAO".to_string(),
             "A test DAO".to_string(),
             None,
-            20, // 20% quorum
+            20,  // 20% quorum
             100, // 100 blocks voting period
             founder.clone(),
             1, // current block
@@ -336,12 +375,14 @@ mod tests {
         );
 
         // Create proposal
-        let proposal_id = dao.create_proposal(
-            &founder,
-            "Test proposal".to_string(),
-            ProposalType::General,
-            1,
-        ).unwrap();
+        let proposal_id = dao
+            .create_proposal(
+                &founder,
+                "Test proposal".to_string(),
+                ProposalType::General,
+                1,
+            )
+            .unwrap();
 
         assert_eq!(proposal_id, 1);
         let proposal = dao.get_proposal(1).unwrap();
@@ -368,12 +409,14 @@ mod tests {
         dao.add_member(member2.clone(), 50, 2).unwrap();
 
         // Create proposal
-        let proposal_id = dao.create_proposal(
-            &founder,
-            "Test proposal".to_string(),
-            ProposalType::General,
-            2,
-        ).unwrap();
+        let proposal_id = dao
+            .create_proposal(
+                &founder,
+                "Test proposal".to_string(),
+                ProposalType::General,
+                2,
+            )
+            .unwrap();
 
         // Vote on proposal
         dao.vote(&founder, proposal_id, true, 3).unwrap(); // 100 votes for
@@ -402,12 +445,14 @@ mod tests {
         dao.add_member(member2.clone(), 50, 2).unwrap();
 
         // Create proposal
-        let proposal_id = dao.create_proposal(
-            &founder,
-            "Test proposal".to_string(),
-            ProposalType::General,
-            2,
-        ).unwrap();
+        let proposal_id = dao
+            .create_proposal(
+                &founder,
+                "Test proposal".to_string(),
+                ProposalType::General,
+                2,
+            )
+            .unwrap();
 
         // Vote - should meet quorum (150 total votes, 20% = 30, we have 150 votes)
         dao.vote(&founder, proposal_id, true, 3).unwrap();
@@ -443,12 +488,14 @@ mod tests {
         dao.add_member(member2.clone(), 50, 2).unwrap();
 
         // Create proposal
-        let proposal_id = dao.create_proposal(
-            &founder,
-            "Test proposal".to_string(),
-            ProposalType::General,
-            2,
-        ).unwrap();
+        let proposal_id = dao
+            .create_proposal(
+                &founder,
+                "Test proposal".to_string(),
+                ProposalType::General,
+                2,
+            )
+            .unwrap();
 
         // Only founder votes (100 votes, but need 120 for 80% quorum)
         dao.vote(&founder, proposal_id, true, 3).unwrap();

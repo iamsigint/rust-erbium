@@ -1,8 +1,8 @@
 // src/storage/blockchain_storage.rs
 
-use crate::core::{Block, Transaction, State};
+use crate::core::{Block, State, Transaction};
 use crate::storage::database::{Database, DatabaseConfig};
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -35,8 +35,9 @@ impl BlockchainStorage {
         let mut db = self.database.write().await;
 
         // Serialize block
-        let block_data = bincode::serialize(block)
-            .map_err(|e| BlockchainError::Serialization(format!("Failed to serialize block: {}", e)))?;
+        let block_data = bincode::serialize(block).map_err(|e| {
+            BlockchainError::Serialization(format!("Failed to serialize block: {}", e))
+        })?;
 
         // Store block by hash
         let block_key = format!("block:{}", block.hash().to_hex()).into_bytes();
@@ -51,7 +52,11 @@ impl BlockchainStorage {
         let height_bytes = block.header.number.to_be_bytes();
         db.put(latest_key, &height_bytes)?;
 
-        log::debug!("Stored block {} at height {}", block.hash().to_hex(), block.header.number);
+        log::debug!(
+            "Stored block {} at height {}",
+            block.hash().to_hex(),
+            block.header.number
+        );
         Ok(())
     }
 
@@ -62,8 +67,9 @@ impl BlockchainStorage {
         let block_key = format!("block:{}", hex::encode(block_hash)).into_bytes();
 
         if let Some(block_data) = db.get(&block_key)? {
-            let block: Block = bincode::deserialize(&block_data)
-                .map_err(|e| BlockchainError::Serialization(format!("Failed to deserialize block: {}", e)))?;
+            let block: Block = bincode::deserialize(&block_data).map_err(|e| {
+                BlockchainError::Serialization(format!("Failed to deserialize block: {}", e))
+            })?;
             Ok(Some(block))
         } else {
             Ok(None)
@@ -105,8 +111,9 @@ impl BlockchainStorage {
         let mut db = self.database.write().await;
 
         // Serialize state (simplified - in production would need proper state serialization)
-        let state_data = bincode::serialize(state)
-            .map_err(|e| BlockchainError::Serialization(format!("Failed to serialize state: {}", e)))?;
+        let state_data = bincode::serialize(state).map_err(|e| {
+            BlockchainError::Serialization(format!("Failed to serialize state: {}", e))
+        })?;
 
         let state_key = b"state:latest";
         db.put(state_key, &state_data)?;
@@ -121,8 +128,9 @@ impl BlockchainStorage {
 
         let state_key = b"state:latest";
         if let Some(state_data) = db.get(state_key)? {
-            let state: State = bincode::deserialize(&state_data)
-                .map_err(|e| BlockchainError::Serialization(format!("Failed to deserialize state: {}", e)))?;
+            let state: State = bincode::deserialize(&state_data).map_err(|e| {
+                BlockchainError::Serialization(format!("Failed to deserialize state: {}", e))
+            })?;
             Ok(Some(state))
         } else {
             Ok(None)
@@ -130,12 +138,18 @@ impl BlockchainStorage {
     }
 
     /// Store transaction (for indexing)
-    pub async fn store_transaction(&self, tx: &Transaction, block_height: u64, tx_index: usize) -> Result<()> {
+    pub async fn store_transaction(
+        &self,
+        tx: &Transaction,
+        block_height: u64,
+        tx_index: usize,
+    ) -> Result<()> {
         let mut db = self.database.write().await;
 
         // Store transaction by hash
-        let tx_data = bincode::serialize(tx)
-            .map_err(|e| BlockchainError::Serialization(format!("Failed to serialize transaction: {}", e)))?;
+        let tx_data = bincode::serialize(tx).map_err(|e| {
+            BlockchainError::Serialization(format!("Failed to serialize transaction: {}", e))
+        })?;
 
         let tx_key = format!("tx:{}", tx.hash().to_hex()).into_bytes();
         db.put(&tx_key, &tx_data)?;
@@ -148,8 +162,9 @@ impl BlockchainStorage {
         });
 
         let metadata_key = format!("tx_meta:{}", tx.hash().to_hex()).into_bytes();
-        let metadata_bytes = serde_json::to_vec(&metadata)
-            .map_err(|e| BlockchainError::Serialization(format!("Failed to serialize tx metadata: {}", e)))?;
+        let metadata_bytes = serde_json::to_vec(&metadata).map_err(|e| {
+            BlockchainError::Serialization(format!("Failed to serialize tx metadata: {}", e))
+        })?;
 
         db.put(&metadata_key, &metadata_bytes)?;
 
@@ -164,8 +179,9 @@ impl BlockchainStorage {
         let tx_key = format!("tx:{}", hex::encode(tx_hash)).into_bytes();
 
         if let Some(tx_data) = db.get(&tx_key)? {
-            let tx: Transaction = bincode::deserialize(&tx_data)
-                .map_err(|e| BlockchainError::Serialization(format!("Failed to deserialize transaction: {}", e)))?;
+            let tx: Transaction = bincode::deserialize(&tx_data).map_err(|e| {
+                BlockchainError::Serialization(format!("Failed to deserialize transaction: {}", e))
+            })?;
             Ok(Some(tx))
         } else {
             Ok(None)
@@ -173,14 +189,22 @@ impl BlockchainStorage {
     }
 
     /// Get transaction metadata
-    pub async fn get_transaction_metadata(&self, tx_hash: &[u8]) -> Result<Option<serde_json::Value>> {
+    pub async fn get_transaction_metadata(
+        &self,
+        tx_hash: &[u8],
+    ) -> Result<Option<serde_json::Value>> {
         let mut db = self.database.write().await;
 
         let metadata_key = format!("tx_meta:{}", hex::encode(tx_hash)).into_bytes();
 
         if let Some(metadata_bytes) = db.get(&metadata_key)? {
-            let metadata: serde_json::Value = serde_json::from_slice(&metadata_bytes)
-                .map_err(|e| BlockchainError::Serialization(format!("Failed to deserialize tx metadata: {}", e)))?;
+            let metadata: serde_json::Value =
+                serde_json::from_slice(&metadata_bytes).map_err(|e| {
+                    BlockchainError::Serialization(format!(
+                        "Failed to deserialize tx metadata: {}",
+                        e
+                    ))
+                })?;
             Ok(Some(metadata))
         } else {
             Ok(None)
@@ -191,8 +215,9 @@ impl BlockchainStorage {
     pub async fn store_genesis_config(&self, config: &serde_json::Value) -> Result<()> {
         let mut db = self.database.write().await;
 
-        let config_bytes = serde_json::to_vec(config)
-            .map_err(|e| BlockchainError::Serialization(format!("Failed to serialize genesis config: {}", e)))?;
+        let config_bytes = serde_json::to_vec(config).map_err(|e| {
+            BlockchainError::Serialization(format!("Failed to serialize genesis config: {}", e))
+        })?;
 
         let config_key = b"metadata:genesis_config";
         db.put(config_key, &config_bytes)?;
@@ -207,8 +232,12 @@ impl BlockchainStorage {
 
         let config_key = b"metadata:genesis_config";
         if let Some(config_bytes) = db.get(config_key)? {
-            let config: serde_json::Value = serde_json::from_slice(&config_bytes)
-                .map_err(|e| BlockchainError::Serialization(format!("Failed to deserialize genesis config: {}", e)))?;
+            let config: serde_json::Value = serde_json::from_slice(&config_bytes).map_err(|e| {
+                BlockchainError::Serialization(format!(
+                    "Failed to deserialize genesis config: {}",
+                    e
+                ))
+            })?;
             Ok(Some(config))
         } else {
             Ok(None)
@@ -259,7 +288,9 @@ mod tests {
     #[tokio::test]
     async fn test_blockchain_storage() {
         let temp_dir = TempDir::new().unwrap();
-        let storage = BlockchainStorage::new(temp_dir.path().to_str().unwrap()).await.unwrap();
+        let storage = BlockchainStorage::new(temp_dir.path().to_str().unwrap())
+            .await
+            .unwrap();
 
         // Test genesis config storage
         let genesis_config = serde_json::json!({

@@ -5,27 +5,27 @@
 //! Features automated compliance checking, risk assessment, remediation,
 //! KYC/AML integration, emergency response, and secure key management.
 
-pub mod frameworks;
-pub mod risk_assessment;
 pub mod automated_checking;
+pub mod frameworks;
+pub mod kyc_aml;
 pub mod remediation;
 pub mod reporting;
-pub mod kyc_aml;
+pub mod risk_assessment;
 
 // Re-export main components
+pub use automated_checking::{CheckResult, ComplianceChecker, ComplianceStatus};
 pub use frameworks::{ComplianceFramework, FrameworkConfig, RegulatoryRequirement};
-pub use risk_assessment::{RiskAssessor, RiskLevel, ComplianceRisk};
-pub use automated_checking::{ComplianceChecker, CheckResult, ComplianceStatus};
-pub use remediation::{RemediationEngine, RemediationAction, RemediationPlan};
-pub use reporting::{ComplianceReporter, ComplianceReport, AuditTrail};
 pub use kyc_aml::{
-    KycAmlEngine, KycAmlConfig, KycVerificationRequest, KycVerificationResult,
-    TransactionComplianceResult, KycAmlReport, RiskLevel as KycRiskLevel,
-    ComplianceFlag, KycStatus, DocumentType
+    ComplianceFlag, DocumentType, KycAmlConfig, KycAmlEngine, KycAmlReport, KycStatus,
+    KycVerificationRequest, KycVerificationResult, RiskLevel as KycRiskLevel,
+    TransactionComplianceResult,
 };
+pub use remediation::{RemediationAction, RemediationEngine, RemediationPlan};
+pub use reporting::{AuditTrail, ComplianceReport, ComplianceReporter};
+pub use risk_assessment::{ComplianceRisk, RiskAssessor, RiskLevel};
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -99,15 +99,19 @@ impl ComplianceEngine {
         log::info!("Initializing compliance automation engine...");
 
         *self.is_initialized.write().await = true;
-        log::info!("Compliance automation engine initialized with {} frameworks",
-                  self.config.enabled_frameworks.len());
+        log::info!(
+            "Compliance automation engine initialized with {} frameworks",
+            self.config.enabled_frameworks.len()
+        );
         Ok(())
     }
 
     /// Run comprehensive compliance check
     pub async fn run_compliance_check(&self) -> Result<ComplianceCheckResults> {
         if !*self.is_initialized.read().await {
-            return Err(BlockchainError::Compliance("Compliance engine not initialized".to_string()));
+            return Err(BlockchainError::Compliance(
+                "Compliance engine not initialized".to_string(),
+            ));
         }
 
         log::info!("Running comprehensive compliance check...");
@@ -123,12 +127,16 @@ impl ComplianceEngine {
 
             if result.status == ComplianceStatus::NonCompliant {
                 overall_status = ComplianceStatus::NonCompliant;
-            } else if result.status == ComplianceStatus::AtRisk && overall_status == ComplianceStatus::Compliant {
+            } else if result.status == ComplianceStatus::AtRisk
+                && overall_status == ComplianceStatus::Compliant
+            {
                 overall_status = ComplianceStatus::AtRisk;
             }
 
             total_violations += result.violations.len();
-            critical_violations += result.violations.iter()
+            critical_violations += result
+                .violations
+                .iter()
                 .filter(|v| matches!(v.severity, ViolationSeverity::Critical))
                 .count();
 
@@ -137,14 +145,24 @@ impl ComplianceEngine {
 
         // Perform risk assessment
         let risk_assessment = if self.config.risk_assessment_enabled {
-            Some(self.risk_assessor.assess_overall_risk(&framework_results).await?)
+            Some(
+                self.risk_assessor
+                    .assess_overall_risk(&framework_results)
+                    .await?,
+            )
         } else {
             None
         };
 
         // Generate remediation plan if needed
-        let remediation_plan = if overall_status != ComplianceStatus::Compliant && self.config.auto_remediation_enabled {
-            Some(self.remediation_engine.generate_plan(&framework_results).await?)
+        let remediation_plan = if overall_status != ComplianceStatus::Compliant
+            && self.config.auto_remediation_enabled
+        {
+            Some(
+                self.remediation_engine
+                    .generate_plan(&framework_results)
+                    .await?,
+            )
         } else {
             None
         };
@@ -163,14 +181,20 @@ impl ComplianceEngine {
         // Log results
         self.reporter.log_compliance_check(&results).await?;
 
-        log::info!("Compliance check completed: {} frameworks checked, {} violations found",
-                  framework_results.len(), total_violations);
+        log::info!(
+            "Compliance check completed: {} frameworks checked, {} violations found",
+            framework_results.len(),
+            total_violations
+        );
 
         Ok(results)
     }
 
     /// Assess compliance risk for a specific operation
-    pub async fn assess_operation_risk(&self, operation: &ComplianceOperation) -> Result<OperationRiskAssessment> {
+    pub async fn assess_operation_risk(
+        &self,
+        operation: &ComplianceOperation,
+    ) -> Result<OperationRiskAssessment> {
         let risks = self.risk_assessor.assess_operation_risk(operation).await?;
 
         // Since ComplianceRisk is currently empty, use a default risk score
@@ -199,14 +223,20 @@ impl ComplianceEngine {
     }
 
     /// Generate compliance report
-    pub async fn generate_compliance_report(&self, start_date: u64, end_date: u64) -> Result<ComplianceReport> {
+    pub async fn generate_compliance_report(
+        &self,
+        start_date: u64,
+        end_date: u64,
+    ) -> Result<ComplianceReport> {
         self.reporter.generate_report(start_date, end_date).await
     }
 
     /// Execute automated remediation
     pub async fn execute_remediation(&self, plan: &RemediationPlan) -> Result<RemediationResult> {
         if !self.config.auto_remediation_enabled {
-            return Err(BlockchainError::Compliance("Auto-remediation is disabled".to_string()));
+            return Err(BlockchainError::Compliance(
+                "Auto-remediation is disabled".to_string(),
+            ));
         }
 
         let _result = self.remediation_engine.execute_plan(plan).await?;
@@ -228,9 +258,15 @@ impl ComplianceEngine {
         let active_violations = self.reporter.get_active_violations().await?;
         let upcoming_deadlines = self.get_upcoming_compliance_deadlines().await?;
 
-        let overall_status = if active_violations.iter().any(|v| matches!(v.severity, ViolationSeverity::Critical)) {
+        let overall_status = if active_violations
+            .iter()
+            .any(|v| matches!(v.severity, ViolationSeverity::Critical))
+        {
             ComplianceStatus::NonCompliant
-        } else if active_violations.iter().any(|v| matches!(v.severity, ViolationSeverity::High)) {
+        } else if active_violations
+            .iter()
+            .any(|v| matches!(v.severity, ViolationSeverity::High))
+        {
             ComplianceStatus::AtRisk
         } else {
             ComplianceStatus::Compliant
@@ -240,7 +276,8 @@ impl ComplianceEngine {
             overall_status,
             last_check_timestamp: last_check.timestamp,
             active_violations_count: active_violations.len(),
-            critical_violations_count: active_violations.iter()
+            critical_violations_count: active_violations
+                .iter()
                 .filter(|v| matches!(v.severity, ViolationSeverity::Critical))
                 .count(),
             upcoming_deadlines_count: upcoming_deadlines.len(),
@@ -346,11 +383,26 @@ pub struct OperationRiskAssessment {
 /// Compliance operation types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ComplianceOperation {
-    DataProcessing { data_types: Vec<String>, jurisdictions: Vec<String> },
-    DataStorage { encryption_used: bool, retention_period_days: u64 },
-    DataTransfer { source_region: String, destination_region: String },
-    UserConsent { consent_types: Vec<String>, withdrawal_supported: bool },
-    AuditLogging { log_types: Vec<String>, retention_days: u64 },
+    DataProcessing {
+        data_types: Vec<String>,
+        jurisdictions: Vec<String>,
+    },
+    DataStorage {
+        encryption_used: bool,
+        retention_period_days: u64,
+    },
+    DataTransfer {
+        source_region: String,
+        destination_region: String,
+    },
+    UserConsent {
+        consent_types: Vec<String>,
+        withdrawal_supported: bool,
+    },
+    AuditLogging {
+        log_types: Vec<String>,
+        retention_days: u64,
+    },
 }
 
 /// Compliance status summary

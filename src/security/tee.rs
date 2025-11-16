@@ -4,7 +4,7 @@
 //! and data protection using hardware-backed security enclaves.
 
 use crate::utils::error::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// TEE configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,9 +29,9 @@ impl Default for TEEConfig {
 /// TEE types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TEEType {
-    SGX,      // Intel Software Guard Extensions
-    TDX,      // Intel Trust Domain Extensions
-    SEV,      // AMD Secure Encrypted Virtualization
+    SGX,       // Intel Software Guard Extensions
+    TDX,       // Intel Trust Domain Extensions
+    SEV,       // AMD Secure Encrypted Virtualization
     TrustZone, // ARM TrustZone
 }
 
@@ -102,7 +102,7 @@ impl TrustedExecutionEnvironment {
 
     // Helper method
     fn calculate_measurement(&self, code: &[u8]) -> Vec<u8> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(code);
         hasher.finalize().to_vec()

@@ -1,11 +1,11 @@
-use super::types::{Address, Hash};
 use super::transaction::Transaction;
-use crate::utils::error::{Result, BlockchainError};
-use crate::storage::cache::{SharedCache, create_shared_cache_with_memory_limit};
+use super::types::{Address, Hash};
+use crate::storage::cache::{create_shared_cache_with_memory_limit, SharedCache};
 use crate::storage::database::Database;
+use crate::utils::error::{BlockchainError, Result};
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -13,8 +13,8 @@ pub struct Account {
     pub balance: u64,
     pub nonce: u64,
     pub code_hash: Option<Hash>, // For smart contracts
-    pub storage_root: Hash, // Merkle root of storage
-    pub last_accessed: u64, // For cache optimization
+    pub storage_root: Hash,      // Merkle root of storage
+    pub last_accessed: u64,      // For cache optimization
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -45,14 +45,19 @@ impl State {
             cache_misses: 0,
         };
         // Faucet for dev: pre-fund sender used in examples
-        let faucet_addr = super::types::Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
-        s.accounts.insert(faucet_addr.clone(), Account {
-            balance: 10_000 * 100_000_000, // 10,000 ERB
-            nonce: 0,
-            code_hash: None,
-            storage_root: Hash::new(b"empty"),
-            last_accessed: current_timestamp(),
-        });
+        let faucet_addr = super::types::Address::new_unchecked(
+            "0x0000000000000000000000000000000000000001".to_string(),
+        );
+        s.accounts.insert(
+            faucet_addr.clone(),
+            Account {
+                balance: 10_000 * 100_000_000, // 10,000 ERB
+                nonce: 0,
+                code_hash: None,
+                storage_root: Hash::new(b"empty"),
+                last_accessed: current_timestamp(),
+            },
+        );
         s
     }
 
@@ -75,15 +80,20 @@ impl State {
         s.load_accounts_from_database().await?;
 
         // Faucet for dev: pre-fund sender used in examples (only if not exists)
-        let faucet_addr = super::types::Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
+        let faucet_addr = super::types::Address::new_unchecked(
+            "0x0000000000000000000000000000000000000001".to_string(),
+        );
         if !s.accounts.contains_key(&faucet_addr) {
-            s.accounts.insert(faucet_addr.clone(), Account {
-                balance: 10_000 * 100_000_000, // 10,000 ERB
-                nonce: 0,
-                code_hash: None,
-                storage_root: Hash::new(b"empty"),
-                last_accessed: current_timestamp(),
-            });
+            s.accounts.insert(
+                faucet_addr.clone(),
+                Account {
+                    balance: 10_000 * 100_000_000, // 10,000 ERB
+                    nonce: 0,
+                    code_hash: None,
+                    storage_root: Hash::new(b"empty"),
+                    last_accessed: current_timestamp(),
+                },
+            );
             s.save_account_to_database(&faucet_addr).await?;
         }
 
@@ -119,10 +129,13 @@ impl State {
                                 if let Ok(address) = Address::new(address_str.to_string()) {
                                     // Deserialize account data
                                     if value.len() >= 8 {
-                                        let balance = u64::from_be_bytes(value[0..8].try_into().unwrap());
+                                        let balance =
+                                            u64::from_be_bytes(value[0..8].try_into().unwrap());
                                         let nonce = if value.len() >= 16 {
                                             u64::from_be_bytes(value[8..16].try_into().unwrap())
-                                        } else { 0 };
+                                        } else {
+                                            0
+                                        };
 
                                         let account = Account {
                                             balance,
@@ -199,7 +212,7 @@ impl State {
 
         Ok(())
     }
-    
+
     pub fn apply_transaction(&mut self, transaction: &Transaction) -> Result<()> {
         match transaction.transaction_type {
             crate::core::transaction::TransactionType::ConfidentialTransfer => {
@@ -211,9 +224,7 @@ impl State {
             crate::core::transaction::TransactionType::Unstake => {
                 self.apply_unstake_transaction(transaction)
             }
-            _ => {
-                self.apply_regular_transaction(transaction)
-            }
+            _ => self.apply_regular_transaction(transaction),
         }
     }
 
@@ -221,7 +232,11 @@ impl State {
         // Special handling for genesis transactions (from address 0x0)
         if transaction.from.as_str() == "0x0000000000000000000000000000000000000000" {
             // Genesis transactions create tokens from nothing
-            log::info!("Applying genesis transaction: creating {} tokens for {}", transaction.amount, transaction.to);
+            log::info!(
+                "Applying genesis transaction: creating {} tokens for {}",
+                transaction.amount,
+                transaction.to
+            );
 
             // Update recipient account (create if doesn't exist)
             let recipient_account = self.get_account_mut(&transaction.to)?;
@@ -238,12 +253,16 @@ impl State {
 
         // Check nonce
         if transaction.nonce != sender_account.nonce {
-            return Err(BlockchainError::InvalidTransaction("Invalid nonce".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Invalid nonce".to_string(),
+            ));
         }
 
         // Check balance
         if sender_account.balance < transaction.amount + transaction.fee {
-            return Err(BlockchainError::InvalidTransaction("Insufficient balance".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Insufficient balance".to_string(),
+            ));
         }
 
         // Update sender account
@@ -267,20 +286,24 @@ impl State {
 
         // Check nonce
         if transaction.nonce != sender_account.nonce {
-            return Err(BlockchainError::InvalidTransaction("Invalid nonce".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Invalid nonce".to_string(),
+            ));
         }
 
         // For confidential transfers, the public amount should be 0
         // All value transfer is done via commitments
         if transaction.amount != 0 {
             return Err(BlockchainError::InvalidTransaction(
-                "Confidential transaction should have zero public amount".to_string()
+                "Confidential transaction should have zero public amount".to_string(),
             ));
         }
 
         // Check that sender has enough balance for the fee
         if sender_account.balance < transaction.fee {
-            return Err(BlockchainError::InvalidTransaction("Insufficient balance for fee".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Insufficient balance for fee".to_string(),
+            ));
         }
 
         // Update sender nonce and deduct fee
@@ -290,7 +313,11 @@ impl State {
         // Burn transaction fee
         self.total_supply -= transaction.fee;
 
-        log::debug!("Applied confidential transaction: nonce={}, fee={}", transaction.nonce, transaction.fee);
+        log::debug!(
+            "Applied confidential transaction: nonce={}, fee={}",
+            transaction.nonce,
+            transaction.fee
+        );
 
         Ok(())
     }
@@ -300,12 +327,16 @@ impl State {
 
         // Check nonce
         if transaction.nonce != sender_account.nonce {
-            return Err(BlockchainError::InvalidTransaction("Invalid nonce".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Invalid nonce".to_string(),
+            ));
         }
 
         // Check balance
         if sender_account.balance < transaction.amount + transaction.fee {
-            return Err(BlockchainError::InvalidTransaction("Insufficient balance".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Insufficient balance".to_string(),
+            ));
         }
 
         // Update sender account
@@ -317,7 +348,11 @@ impl State {
 
         // Note: Actual staking logic is handled by consensus layer
         // In a full implementation, we would call consensus.add_stake_from_transaction()
-        log::info!("Applied stake transaction: {} staked {}", transaction.from.as_str(), transaction.amount);
+        log::info!(
+            "Applied stake transaction: {} staked {}",
+            transaction.from.as_str(),
+            transaction.amount
+        );
 
         Ok(())
     }
@@ -327,12 +362,16 @@ impl State {
 
         // Check nonce
         if transaction.nonce != sender_account.nonce {
-            return Err(BlockchainError::InvalidTransaction("Invalid nonce".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Invalid nonce".to_string(),
+            ));
         }
 
         // Check balance (unstaking fee)
         if sender_account.balance < transaction.fee {
-            return Err(BlockchainError::InvalidTransaction("Insufficient balance for unstaking fee".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Insufficient balance for unstaking fee".to_string(),
+            ));
         }
 
         // Update sender account
@@ -343,42 +382,59 @@ impl State {
         self.total_supply -= transaction.fee;
 
         // Note: Actual unstaking logic is handled by consensus layer
-        log::info!("Applied unstake transaction: {} unstaked {}", transaction.from.as_str(), transaction.amount);
+        log::info!(
+            "Applied unstake transaction: {} unstaked {}",
+            transaction.from.as_str(),
+            transaction.amount
+        );
 
         Ok(())
     }
-    
+
     pub fn get_balance(&self, address: &Address) -> Result<u64> {
-        let account = self.accounts.get(address)
+        let account = self
+            .accounts
+            .get(address)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Account not found".to_string()))?;
         Ok(account.balance)
     }
-    
+
     pub fn get_nonce(&self, address: &Address) -> Result<u64> {
-        let account = self.accounts.get(address)
+        let account = self
+            .accounts
+            .get(address)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Account not found".to_string()))?;
         Ok(account.nonce)
     }
-    
+
     fn get_account_mut(&mut self, address: &Address) -> Result<&mut Account> {
         if !self.accounts.contains_key(address) {
-            self.accounts.insert(address.clone(), Account {
-                balance: 0,
-                nonce: 0,
-                code_hash: None,
-                storage_root: Hash::new(b"empty"),
-                last_accessed: current_timestamp(),
-            });
+            self.accounts.insert(
+                address.clone(),
+                Account {
+                    balance: 0,
+                    nonce: 0,
+                    code_hash: None,
+                    storage_root: Hash::new(b"empty"),
+                    last_accessed: current_timestamp(),
+                },
+            );
         }
 
-        self.accounts.get_mut(address)
+        self.accounts
+            .get_mut(address)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Account not found".to_string()))
     }
-    
+
     pub fn get_total_supply(&self) -> u64 {
         self.total_supply
     }
-    
+
+    /// Get an immutable reference to an account if it exists
+    pub fn get_account(&self, address: &Address) -> Option<&Account> {
+        self.accounts.get(address)
+    }
+
     /// Verifica se uma conta existe no estado
     pub fn account_exists(&self, address: &Address) -> Result<bool> {
         Ok(self.accounts.contains_key(address))
@@ -386,7 +442,9 @@ impl State {
 
     /// Get cache performance statistics
     pub fn get_cache_stats(&self) -> Result<CachePerformanceStats> {
-        let cache_stats = self.account_cache.read()
+        let cache_stats = self
+            .account_cache
+            .read()
             .map_err(|_| BlockchainError::Storage("Cache lock error".to_string()))?
             .get_stats();
 

@@ -16,33 +16,33 @@ pub mod vm;
 
 // Re-export commonly used types and functions
 pub use block::Block;
-pub use transaction::{Transaction, TransactionType};
-pub use state::State;
 pub use chain::Blockchain;
-pub use types::{Hash, Address, Timestamp, Difficulty, Nonce};
+pub use state::State;
+pub use transaction::{Transaction, TransactionType};
+pub use types::{Address, Difficulty, Hash, Nonce, Timestamp};
 
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Core blockchain configuration
 #[derive(Debug, Clone)]
 pub struct BlockchainConfig {
-    pub block_time: u64,         // Target block time in seconds
-    pub max_block_size: usize,     // Maximum block size in bytes
+    pub block_time: u64,       // Target block time in seconds
+    pub max_block_size: usize, // Maximum block size in bytes
     pub max_transactions_per_block: usize,
-    pub genesis_timestamp: u64,    // Genesis block timestamp
-    pub chain_id: u64,             // Network chain ID
+    pub genesis_timestamp: u64, // Genesis block timestamp
+    pub chain_id: u64,          // Network chain ID
 }
 
 impl Default for BlockchainConfig {
     fn default() -> Self {
         Self {
-            block_time: 30,       // 30 seconds per block
+            block_time: 30,                  // 30 seconds per block
             max_block_size: 8 * 1024 * 1024, // 8MB
             max_transactions_per_block: 10000,
             genesis_timestamp: 1635724800000, // Example timestamp
-            chain_id: 137,        // Erbium mainnet chain ID
+            chain_id: 137,                    // Erbium mainnet chain ID
         }
     }
 }
@@ -87,22 +87,30 @@ pub fn calculate_transaction_fee(gas_used: u64, gas_price: u64) -> u64 {
 /// Validate transaction basic structure
 pub fn validate_transaction_structure(transaction: &Transaction) -> Result<()> {
     if transaction.fee == 0 {
-        return Err(BlockchainError::InvalidTransaction("Zero fee not allowed".to_string()));
+        return Err(BlockchainError::InvalidTransaction(
+            "Zero fee not allowed".to_string(),
+        ));
     }
-    
+
     if transaction.timestamp > chrono::Utc::now().timestamp_millis() as u64 + 300000 {
         // 5 minutes in future maximum
-        return Err(BlockchainError::InvalidTransaction("Timestamp too far in future".to_string()));
+        return Err(BlockchainError::InvalidTransaction(
+            "Timestamp too far in future".to_string(),
+        ));
     }
-    
+
     if !validate_address(&transaction.from) {
-        return Err(BlockchainError::InvalidTransaction("Invalid sender address".to_string()));
+        return Err(BlockchainError::InvalidTransaction(
+            "Invalid sender address".to_string(),
+        ));
     }
-    
+
     if !validate_address(&transaction.to) {
-        return Err(BlockchainError::InvalidTransaction("Invalid recipient address".to_string()));
+        return Err(BlockchainError::InvalidTransaction(
+            "Invalid recipient address".to_string(),
+        ));
     }
-    
+
     Ok(())
 }
 
@@ -111,11 +119,11 @@ pub fn calculate_block_reward(block_height: u64, config: &BlockchainConfig) -> u
     // Simple block reward calculation
     // In real implementation, this would follow the emission schedule
     let base_reward = 10_000_000; // 10 ERB base reward
-    
+
     // Halving every 4 years (assuming 30s blocks)
     let halving_interval = 4 * 365 * 24 * 60 * 60 / config.block_time;
     let halvings = block_height / halving_interval;
-    
+
     base_reward / 2u64.pow(halvings as u32)
 }
 
@@ -128,13 +136,14 @@ pub fn calculate_next_difficulty(
     if recent_block_times.len() < 2 {
         return current_difficulty;
     }
-    
-    let total_time: u64 = recent_block_times.windows(2)
+
+    let total_time: u64 = recent_block_times
+        .windows(2)
         .map(|window| window[1] - window[0])
         .sum();
-    
+
     let average_block_time = total_time / (recent_block_times.len() - 1) as u64;
-    
+
     if average_block_time < target_block_time {
         // Blocks are coming too fast, increase difficulty
         current_difficulty * target_block_time / average_block_time
@@ -356,18 +365,20 @@ impl MultiLayerTransaction {
     pub fn verify_integrity(&mut self) -> bool {
         // TODO: Implement full verification logic
         // For now, basic structural validation
-        !self.witness_layer.signatures.is_empty() ||
-        !self.metadata_layer.cross_chain_proofs.is_empty() ||
-        !self.extension_layer.ai_predictions.is_empty()
+        !self.witness_layer.signatures.is_empty()
+            || !self.metadata_layer.cross_chain_proofs.is_empty()
+            || !self.extension_layer.ai_predictions.is_empty()
     }
 
     /// Add cross-chain proof (innovation layer)
     pub fn add_cross_chain_proof(&mut self, chain: String, proof: Vec<u8>, validators: u32) {
-        self.metadata_layer.cross_chain_proofs.push(CrossChainProof {
-            target_chain: chain,
-            proof_data: proof,
-            validator_count: validators,
-        });
+        self.metadata_layer
+            .cross_chain_proofs
+            .push(CrossChainProof {
+                target_chain: chain,
+                proof_data: proof,
+                validator_count: validators,
+            });
     }
 
     /// Add Layer-2 commit (innovation layer)
@@ -394,7 +405,8 @@ impl MultiLayerTransaction {
 impl WitnessLayer {
     pub fn size(&self) -> u64 {
         let mut size = std::mem::size_of::<Vec<crate::crypto::Signature>>() as u64;
-        size += self.signatures.len() as u64 * std::mem::size_of::<crate::crypto::Signature>() as u64;
+        size +=
+            self.signatures.len() as u64 * std::mem::size_of::<crate::crypto::Signature>() as u64;
         size += self.zk_proofs.len() as u64 * 64; // Estimated
         size += self.quantum_proofs.len() as u64 * 128; // Estimated
         size += 32; // validation_hash
@@ -541,7 +553,12 @@ impl QuantumAccumulator {
     pub fn verify_inclusion(&self, proof: &InclusionProof) -> bool {
         // Basic Merkle verification
         let root = self.mmr.get_root();
-        if !MerkleTree::verify_proof(&proof.element_hash, &proof.merkle_proof, &root, proof.leaf_index) {
+        if !MerkleTree::verify_proof(
+            &proof.element_hash,
+            &proof.merkle_proof,
+            &root,
+            proof.leaf_index,
+        ) {
             return false;
         }
 
@@ -554,7 +571,9 @@ impl QuantumAccumulator {
     pub fn verify_non_existence(&self, proof: &NonExistenceProof) -> bool {
         // Check if element exists in the commitment set
         for commitment in &self.quantum_commitments {
-            if commitment.element_hash == proof.target_hash && commitment.timestamp <= proof.timestamp {
+            if commitment.element_hash == proof.target_hash
+                && commitment.timestamp <= proof.timestamp
+            {
                 return false; // Element exists, proof invalid
             }
         }
@@ -564,7 +583,11 @@ impl QuantumAccumulator {
     }
 
     /// Generate temporal inclusion proof (element existed at specific time)
-    pub fn prove_temporal_inclusion(&self, element: &[u8], timestamp: u64) -> Option<TemporalProof> {
+    pub fn prove_temporal_inclusion(
+        &self,
+        element: &[u8],
+        timestamp: u64,
+    ) -> Option<TemporalProof> {
         let target_hash = Hash::new(element);
 
         let mut temporal_chain = Vec::new();
@@ -598,7 +621,7 @@ impl QuantumAccumulator {
 
         // Verify temporal chain consistency
         for i in 1..proof.temporal_chain.len() {
-            if proof.temporal_chain[i-1].timestamp >= proof.temporal_chain[i].timestamp {
+            if proof.temporal_chain[i - 1].timestamp >= proof.temporal_chain[i].timestamp {
                 return false; // Timestamps must be ordered
             }
         }
@@ -608,7 +631,11 @@ impl QuantumAccumulator {
     }
 
     /// Create ZK inclusion proof for privacy-preserving verification
-    pub fn create_zk_inclusion_proof(&self, _element: &[u8], leaf_index: usize) -> Option<ZkInclusionProof> {
+    pub fn create_zk_inclusion_proof(
+        &self,
+        _element: &[u8],
+        leaf_index: usize,
+    ) -> Option<ZkInclusionProof> {
         if leaf_index >= self.mmr.leaves.len() {
             return None;
         }
@@ -617,7 +644,7 @@ impl QuantumAccumulator {
         Some(ZkInclusionProof {
             public_commitment: vec![0; 32], // Hash commitment
             zk_proof_data: vec![0; 512],    // ZK proof (placeholder)
-            verification_key: vec![0; 64], // Verification key
+            verification_key: vec![0; 64],  // Verification key
             leaf_index,
         })
     }
@@ -680,27 +707,27 @@ impl MerkleMountainRange {
 /// Quantum commitment for future-proof cryptography
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuantumCommitment {
-    pub element_hash: Hash,      // Classical hash
-    pub quantum_proof: Vec<u8>,  // Quantum-resistant proof data
-    pub timestamp: u64,          // Timestamp commitment
+    pub element_hash: Hash,     // Classical hash
+    pub quantum_proof: Vec<u8>, // Quantum-resistant proof data
+    pub timestamp: u64,         // Timestamp commitment
 }
 
 /// Zero-knowledge inclusion proof
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZkInclusionProof {
-    pub public_commitment: Vec<u8>,  // Public commitment without revealing data
-    pub zk_proof_data: Vec<u8>,      // Actual ZK proof
-    pub verification_key: Vec<u8>,   // Key to verify proof
-    pub leaf_index: usize,           // Index in the accumulator
+    pub public_commitment: Vec<u8>, // Public commitment without revealing data
+    pub zk_proof_data: Vec<u8>,     // Actual ZK proof
+    pub verification_key: Vec<u8>,  // Key to verify proof
+    pub leaf_index: usize,          // Index in the accumulator
 }
 
 /// Proof that an element does NOT exist in the set
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NonExistenceProof {
-    pub target_hash: Hash,                  // Hash we're proving doesn't exist
-    pub timestamp: u64,                     // Timestamp for temporal verification
-    pub proof_data: Vec<u8>,                // Merkle proof data
-    pub quantum_verification: Vec<u8>,      // Quantum-resistant verification
+    pub target_hash: Hash,             // Hash we're proving doesn't exist
+    pub timestamp: u64,                // Timestamp for temporal verification
+    pub proof_data: Vec<u8>,           // Merkle proof data
+    pub quantum_verification: Vec<u8>, // Quantum-resistant verification
 }
 
 /// Proof that an element exists in the set
@@ -745,7 +772,9 @@ impl MerkleTree {
             for chunk in current_level.chunks(2) {
                 if chunk.len() == 2 {
                     // CORRIGIDO: Use chain e collect em vez de concat
-                    let combined: Vec<u8> = chunk[0].as_bytes().iter()
+                    let combined: Vec<u8> = chunk[0]
+                        .as_bytes()
+                        .iter()
                         .chain(chunk[1].as_bytes().iter())
                         .cloned()
                         .collect();
@@ -799,7 +828,9 @@ impl MerkleTree {
             if current_index.is_multiple_of(2) {
                 // Current is left child
                 // CORRIGIDO: Use chain e collect em vez de concat
-                let combined: Vec<u8> = computed_hash.as_bytes().iter()
+                let combined: Vec<u8> = computed_hash
+                    .as_bytes()
+                    .iter()
                     .chain(proof_hash.as_bytes().iter())
                     .cloned()
                     .collect();
@@ -807,7 +838,9 @@ impl MerkleTree {
             } else {
                 // Current is right child
                 // CORRIGIDO: Use chain e collect em vez de concat
-                let combined: Vec<u8> = proof_hash.as_bytes().iter()
+                let combined: Vec<u8> = proof_hash
+                    .as_bytes()
+                    .iter()
                     .chain(computed_hash.as_bytes().iter())
                     .cloned()
                     .collect();
@@ -825,7 +858,9 @@ impl MerkleTree {
         for chunk in level.chunks(2) {
             if chunk.len() == 2 {
                 // CORRIGIDO: Use chain e collect em vez de concat
-                let combined: Vec<u8> = chunk[0].as_bytes().iter()
+                let combined: Vec<u8> = chunk[0]
+                    .as_bytes()
+                    .iter()
                     .chain(chunk[1].as_bytes().iter())
                     .cloned()
                     .collect();
@@ -858,40 +893,40 @@ mod tests {
             Hash::new(b"hash2"),
             Hash::new(b"hash3"),
         ];
-        
+
         let root = MerkleTree::calculate_root(&hashes);
         assert_ne!(root, Hash::new(b"empty"));
-        
+
         let proof = MerkleTree::generate_proof(&hashes, 0).unwrap();
         assert!(!proof.is_empty());
-        
+
         let is_valid = MerkleTree::verify_proof(&hashes[0], &proof, &root, 0);
         assert!(is_valid);
     }
-    
+
     #[test]
     fn test_block_reward_calculation() {
         let config = BlockchainConfig::default();
         let reward = calculate_block_reward(0, &config);
         assert_eq!(reward, 10_000_000);
     }
-    
+
     #[test]
     fn test_address_validation() -> std::result::Result<(), AddressError> {
         // Address::new returns a Result, so we test the result
         let valid_address = Address::new("0x0000000000000000000000000000000000000000".to_string())?;
         let invalid_address_result = Address::new("invalid".to_string());
-        
+
         assert!(validate_address(&valid_address));
         assert!(invalid_address_result.is_err());
-        
+
         // Test the validation logic for an address that parses but might be "invalid"
         // In this case, our validation just checks parsing, so an invalid_address that parses
         // is not possible with the current Address::new implementation.
         // We can test the logic directly:
         let invalid_format_address = Address::new_unchecked("invalid".to_string());
         assert!(!validate_address(&invalid_format_address));
-        
+
         Ok(())
     }
 }

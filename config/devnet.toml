@@ -1,6 +1,6 @@
 # Devnet configuration for Erbium
 network = "devnet"
-port = 3030
+port = 30303
 rpc_port = 8545
 rest_port = 8080
 data_dir = "./data/devnet"

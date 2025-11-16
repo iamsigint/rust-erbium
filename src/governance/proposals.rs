@@ -1,5 +1,5 @@
 use crate::core::types::Address;
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -38,7 +38,7 @@ impl ProposalManager {
             next_proposal_id: 1,
         }
     }
-    
+
     pub fn create_proposal(
         &mut self,
         creator: &Address,
@@ -47,7 +47,7 @@ impl ProposalManager {
         actions: Vec<ProposalAction>,
     ) -> Result<u64> {
         let id = self.next_proposal_id;
-        
+
         let proposal = Proposal {
             id,
             creator: creator.clone(),
@@ -58,13 +58,13 @@ impl ProposalManager {
             status: ProposalStatus::Pending,
             executed_at: None,
         };
-        
+
         self.proposals.insert(id, proposal);
         self.next_proposal_id += 1;
-        
+
         Ok(id)
     }
-    
+
     pub fn add_proposal(
         &mut self,
         id: u64,
@@ -72,9 +72,11 @@ impl ProposalManager {
         actions: Vec<ProposalAction>,
     ) -> Result<()> {
         if self.proposals.contains_key(&id) {
-            return Err(BlockchainError::Governance("Proposal ID already exists".to_string()));
+            return Err(BlockchainError::Governance(
+                "Proposal ID already exists".to_string(),
+            ));
         }
-        
+
         let proposal = Proposal {
             id,
             creator: creator.clone(),
@@ -85,71 +87,75 @@ impl ProposalManager {
             status: ProposalStatus::Pending,
             executed_at: None,
         };
-        
+
         self.proposals.insert(id, proposal);
         self.next_proposal_id = self.next_proposal_id.max(id + 1);
-        
+
         Ok(())
     }
-    
+
     pub fn update_proposal_status(&mut self, id: u64, status: ProposalStatus) -> Result<()> {
-        let proposal = self.proposals.get_mut(&id)
+        let proposal = self
+            .proposals
+            .get_mut(&id)
             .ok_or_else(|| BlockchainError::Governance("Proposal not found".to_string()))?;
-        
+
         let status_clone = status.clone();
         proposal.status = status;
-        
+
         if status_clone == ProposalStatus::Executed {
             proposal.executed_at = Some(chrono::Utc::now().timestamp_millis() as u64);
         }
-        
+
         Ok(())
     }
-    
+
     pub fn mark_executed(&mut self, id: u64) -> Result<()> {
         self.update_proposal_status(id, ProposalStatus::Executed)
     }
-    
+
     pub fn get_proposal(&self, id: u64) -> Option<&Proposal> {
         self.proposals.get(&id)
     }
-    
+
     pub fn get_proposal_mut(&mut self, id: u64) -> Option<&mut Proposal> {
         self.proposals.get_mut(&id)
     }
-    
+
     pub fn get_proposal_actions(&self, id: u64) -> Result<Option<Vec<ProposalAction>>> {
         Ok(self.proposals.get(&id).map(|p| p.actions.clone()))
     }
-    
+
     pub fn get_proposal_status(&self, id: u64) -> Result<Option<ProposalStatus>> {
         Ok(self.proposals.get(&id).map(|p| p.status.clone()))
     }
-    
+
     pub fn get_all_proposals(&self) -> Vec<&Proposal> {
         self.proposals.values().collect()
     }
-    
+
     pub fn get_active_proposals(&self) -> Vec<&Proposal> {
-        self.proposals.values()
+        self.proposals
+            .values()
             .filter(|p| matches!(p.status, ProposalStatus::Pending | ProposalStatus::Active))
             .collect()
     }
-    
+
     pub fn get_proposals_by_creator(&self, creator: &Address) -> Vec<&Proposal> {
-        self.proposals.values()
+        self.proposals
+            .values()
             .filter(|p| &p.creator == creator)
             .collect()
     }
-    
+
     pub fn get_next_proposal_id(&self) -> u64 {
         self.next_proposal_id
     }
-    
+
     pub fn cleanup_old_proposals(&mut self, older_than: u64) -> Result<usize> {
         let current_time = chrono::Utc::now().timestamp_millis() as u64;
         let mut removed_count = 0;
-        
+
         self.proposals.retain(|_, proposal| {
             let should_retain = current_time - proposal.created_at < older_than;
             if !should_retain {
@@ -157,7 +163,7 @@ impl ProposalManager {
             }
             should_retain
         });
-        
+
         Ok(removed_count)
     }
 }

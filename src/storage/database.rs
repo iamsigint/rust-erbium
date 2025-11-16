@@ -1,10 +1,10 @@
-use crate::utils::error::Result;
 use crate::storage::encrypted_db::EncryptedDatabase;
+use crate::utils::error::Result;
 use parity_db::{Db, Options};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,9 +40,9 @@ pub struct Database {
     buffer_size: usize,
     max_buffer_size: usize,
     last_flush: u64,
-    flush_interval: u64, // seconds
+    flush_interval: u64,                           // seconds
     query_cache: HashMap<Vec<u8>, (Vec<u8>, u64)>, // (value, timestamp)
-    cache_ttl: u64, // seconds
+    cache_ttl: u64,                                // seconds
 }
 
 impl Database {
@@ -53,7 +53,7 @@ impl Database {
         };
         Self::with_config(config)
     }
-    
+
     pub fn with_config(config: DatabaseConfig) -> Result<Self> {
         let path = Path::new(&config.path);
         let options = Options::with_columns(path, config.columns);
@@ -80,7 +80,7 @@ impl Database {
             cache_ttl: 300, // Cache for 5 minutes
         })
     }
-    
+
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         let key_vec = key.to_vec();
         let value_vec = if let Some(ref encryptor) = self.encryptor {
@@ -91,15 +91,17 @@ impl Database {
 
         // Update query cache with decrypted value for performance
         let current_time = current_timestamp();
-        self.query_cache.insert(key_vec.clone(), (value.to_vec(), current_time));
+        self.query_cache
+            .insert(key_vec.clone(), (value.to_vec(), current_time));
 
         // Add to write buffer for batching (encrypted if needed)
         self.write_buffer.insert(key_vec, value_vec);
         self.buffer_size += 1;
 
         // Auto-flush if buffer is full or time interval reached
-        if self.buffer_size >= self.max_buffer_size ||
-           current_time - self.last_flush >= self.flush_interval {
+        if self.buffer_size >= self.max_buffer_size
+            || current_time - self.last_flush >= self.flush_interval
+        {
             self.flush_buffer()?;
         }
 
@@ -129,7 +131,8 @@ impl Database {
                 encrypted_value.clone()
             };
             // Update cache with decrypted value
-            self.query_cache.insert(key_vec, (decrypted_value.clone(), current_time));
+            self.query_cache
+                .insert(key_vec, (decrypted_value.clone(), current_time));
             return Ok(Some(decrypted_value));
         }
 
@@ -143,13 +146,14 @@ impl Database {
                     encrypted_value
                 };
                 // Update cache with decrypted value
-                self.query_cache.insert(key_vec, (decrypted_value.clone(), current_time));
+                self.query_cache
+                    .insert(key_vec, (decrypted_value.clone(), current_time));
                 Ok(Some(decrypted_value))
             }
-            other => other.map_err(Into::into)
+            other => other.map_err(Into::into),
         }
     }
-    
+
     pub fn delete(&mut self, key: &[u8]) -> Result<()> {
         let key_vec = key.to_vec();
 
@@ -165,33 +169,33 @@ impl Database {
     pub fn exists(&mut self, key: &[u8]) -> Result<bool> {
         self.get(key).map(|opt| opt.is_some())
     }
-    
+
     pub fn batch_put(&self, operations: Vec<(Vec<u8>, Vec<u8>)>) -> Result<()> {
         let mut batch = Vec::with_capacity(operations.len());
-        
+
         for (key, value) in operations {
             batch.push((0, key, Some(value)));
         }
-        
+
         self.db.commit(batch)?;
         Ok(())
     }
-    
+
     pub fn batch_delete(&self, keys: Vec<Vec<u8>>) -> Result<()> {
         let mut batch = Vec::with_capacity(keys.len());
-        
+
         for key in keys {
             batch.push((0, key, None));
         }
-        
+
         self.db.commit(batch)?;
         Ok(())
     }
-    
+
     pub fn iterate_with_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let mut results = Vec::new();
         let mut iter = self.db.iter(0)?;
-        
+
         while let Ok(Some((key, value))) = iter.next() {
             if key.starts_with(prefix) {
                 results.push((key.to_vec(), value.to_vec()));
@@ -199,40 +203,43 @@ impl Database {
                 break;
             }
         }
-        
+
         Ok(results)
     }
-    
+
     pub fn iterate_all(&self) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let mut results = Vec::new();
         let mut iter = self.db.iter(0)?;
-        
+
         while let Ok(Some((key, value))) = iter.next() {
             results.push((key.to_vec(), value.to_vec()));
         }
-        
+
         Ok(results)
     }
-    
+
     pub fn create_backup(&self, backup_path: &str) -> Result<()> {
         let backup_dir = Path::new(backup_path);
         if !backup_dir.exists() {
             std::fs::create_dir_all(backup_dir)?;
         }
-        
-        log::info!("Backup functionality would copy database files to: {}", backup_path);
+
+        log::info!(
+            "Backup functionality would copy database files to: {}",
+            backup_path
+        );
         Ok(())
     }
-    
+
     pub fn restore_from_backup(&self, _backup_path: &str) -> Result<()> {
         log::info!("Restore functionality would restore from backup files");
         Ok(())
     }
-    
+
     pub fn compact(&self) -> Result<()> {
         Ok(())
     }
-    
+
     pub fn get_stats(&self) -> Result<DatabaseStats> {
         Ok(DatabaseStats {
             total_keys: 0,
@@ -241,7 +248,7 @@ impl Database {
             cache_misses: 0,
         })
     }
-    
+
     /// Flush write buffer to database
     pub fn flush_buffer(&mut self) -> Result<()> {
         if self.write_buffer.is_empty() {
@@ -249,7 +256,8 @@ impl Database {
         }
 
         let operations_count = self.write_buffer.len();
-        let operations: Vec<(u8, Vec<u8>, Option<Vec<u8>>)> = self.write_buffer
+        let operations: Vec<(u8, Vec<u8>, Option<Vec<u8>>)> = self
+            .write_buffer
             .drain()
             .map(|(key, value)| (0, key, Some(value)))
             .collect();
@@ -283,9 +291,8 @@ impl Database {
     pub fn optimize(&mut self) -> Result<()> {
         // Clean expired cache entries
         let current_time = current_timestamp();
-        self.query_cache.retain(|_, (_, timestamp)| {
-            current_time - *timestamp < self.cache_ttl
-        });
+        self.query_cache
+            .retain(|_, (_, timestamp)| current_time - *timestamp < self.cache_ttl);
 
         // Flush buffer if needed
         if self.buffer_size > 0 {
@@ -295,7 +302,7 @@ impl Database {
         log::info!("Database optimization completed");
         Ok(())
     }
-    
+
     pub fn get_column(&self, column: u8) -> Column {
         Column {
             db: Arc::clone(&self.db),
@@ -323,21 +330,21 @@ impl Column {
         self.db.commit(operations)?;
         Ok(())
     }
-    
+
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.db.get(self.column, key).map_err(Into::into)
     }
-    
+
     pub fn delete(&self, key: &[u8]) -> Result<()> {
         let operations = vec![(self.column, key, None)];
         self.db.commit(operations)?;
         Ok(())
     }
-    
+
     pub fn iterate_with_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let mut results = Vec::new();
         let mut iter = self.db.iter(self.column)?;
-        
+
         while let Ok(Some((key, value))) = iter.next() {
             if key.starts_with(prefix) {
                 results.push((key.to_vec(), value.to_vec()));
@@ -345,7 +352,7 @@ impl Column {
                 break;
             }
         }
-        
+
         Ok(results)
     }
 }

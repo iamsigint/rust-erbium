@@ -2,27 +2,27 @@
 
 // src/lib.rs
 
-pub mod core;
-pub mod consensus;
-pub mod crypto;
-pub mod network;
-pub mod privacy;
-pub mod vm;
-pub mod storage;
-pub mod api;
-pub mod governance;
-pub mod bridges;
-pub mod utils;
-pub mod node;
 pub mod analytics;
-pub mod security;
+pub mod api;
+pub mod bridges;
 pub mod compliance;
+pub mod consensus;
+pub mod core;
+pub mod crypto;
+pub mod governance;
+pub mod network;
+pub mod node;
+pub mod privacy;
+pub mod security;
+pub mod storage;
+pub mod utils;
+pub mod vm;
 
 // Re-export commonly used types
-pub use core::{Block, Transaction, Blockchain};
+pub use core::{Block, Blockchain, Transaction};
 pub use crypto::{Dilithium, ZkProofs};
-pub use utils::error::{BlockchainError, Result};
 pub use node::NodeManager;
+pub use utils::error::{BlockchainError, Result};
 
 #[cfg(test)]
 mod tests {
@@ -39,7 +39,7 @@ mod tests {
             "validator".to_string(),
             1000,
         );
-        
+
         assert_eq!(block.header.version, 1);
     }
 }

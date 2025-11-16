@@ -7,12 +7,12 @@
 //! - Incident response workflows
 //! - Emergency communication systems
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::{mpsc, RwLock};
 
 /// Emergency response configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,15 +38,13 @@ impl Default for EmergencyConfig {
             max_concurrent_incidents: 10,
             incident_timeout_seconds: 3600, // 1 hour
             escalation_threshold: IncidentSeverity::High,
-            emergency_contacts: vec![
-                EmergencyContact {
-                    name: "Security Team".to_string(),
-                    email: "security@erbium.io".to_string(),
-                    phone: Some("+1-555-0100".to_string()),
-                    role: "Primary".to_string(),
-                    notification_methods: vec![NotificationMethod::Email, NotificationMethod::SMS],
-                }
-            ],
+            emergency_contacts: vec![EmergencyContact {
+                name: "Security Team".to_string(),
+                email: "security@erbium.io".to_string(),
+                phone: Some("+1-555-0100".to_string()),
+                role: "Primary".to_string(),
+                notification_methods: vec![NotificationMethod::Email, NotificationMethod::SMS],
+            }],
             system_health_checks: vec![
                 "node_connectivity".to_string(),
                 "database_health".to_string(),
@@ -76,7 +74,9 @@ impl EmergencyResponseEngine {
         Self {
             incident_registry: Arc::new(RwLock::new(HashMap::new())),
             circuit_breaker: Arc::new(CircuitBreaker::new()),
-            notification_engine: Arc::new(NotificationEngine::new(config.emergency_contacts.clone())),
+            notification_engine: Arc::new(NotificationEngine::new(
+                config.emergency_contacts.clone(),
+            )),
             health_monitor: Arc::new(HealthMonitor::new()),
             incident_channel: tx,
             incident_receiver: Arc::new(RwLock::new(Some(rx))),
@@ -89,23 +89,33 @@ impl EmergencyResponseEngine {
         log::info!("Initializing emergency response system...");
 
         // Initialize health monitoring
-        self.health_monitor.initialize(&self.config.system_health_checks).await?;
+        self.health_monitor
+            .initialize(&self.config.system_health_checks)
+            .await?;
 
         // Start incident processing task
         self.start_incident_processor().await;
 
-        log::info!("Emergency response system initialized with {} health checks",
-                  self.config.system_health_checks.len());
+        log::info!(
+            "Emergency response system initialized with {} health checks",
+            self.config.system_health_checks.len()
+        );
         Ok(())
     }
 
     /// Report a new incident
     pub async fn report_incident(&self, incident: IncidentReport) -> Result<IncidentResponse> {
         if !self.config.enabled {
-            return Err(BlockchainError::Security("Emergency response system is disabled".to_string()));
+            return Err(BlockchainError::Security(
+                "Emergency response system is disabled".to_string(),
+            ));
         }
 
-        let incident_id = format!("incident_{}_{}", incident.incident_type.to_string().to_lowercase(), current_timestamp());
+        let incident_id = format!(
+            "incident_{}_{}",
+            incident.incident_type.to_string().to_lowercase(),
+            current_timestamp()
+        );
 
         let incident_record = Incident {
             id: incident_id.clone(),
@@ -129,40 +139,62 @@ impl EmergencyResponseEngine {
         }
 
         // Send incident event
-        let _ = self.incident_channel.send(IncidentEvent::NewIncident(incident_record.clone()));
+        let _ = self
+            .incident_channel
+            .send(IncidentEvent::NewIncident(incident_record.clone()));
 
         // Check if circuit breaker should be triggered
         if self.config.circuit_breaker_enabled && incident.severity >= IncidentSeverity::Critical {
-            self.circuit_breaker.trigger_circuit_breaker(&incident).await?;
+            self.circuit_breaker
+                .trigger_circuit_breaker(&incident)
+                .await?;
         }
 
         // Auto-escalate if needed
         let should_escalate = incident.severity >= self.config.escalation_threshold;
         if should_escalate {
-            let _ = self.incident_channel.send(IncidentEvent::EscalateIncident(incident_id.clone()));
+            let _ = self
+                .incident_channel
+                .send(IncidentEvent::EscalateIncident(incident_id.clone()));
         }
 
-        log::warn!("Incident reported: {} - {} ({:?})",
-                  incident_id, incident.description, incident.severity);
+        log::warn!(
+            "Incident reported: {} - {} ({:?})",
+            incident_id,
+            incident.description,
+            incident.severity
+        );
 
         Ok(IncidentResponse {
             incident_id,
             acknowledged: true,
             estimated_resolution_time: self.estimate_resolution_time(incident.severity),
-            auto_actions_taken: vec!["Incident logged".to_string(), "Notifications sent".to_string()],
+            auto_actions_taken: vec![
+                "Incident logged".to_string(),
+                "Notifications sent".to_string(),
+            ],
             manual_intervention_required: should_escalate,
         })
     }
 
     /// Update incident status
-    pub async fn update_incident_status(&self, incident_id: &str, status: IncidentStatus, notes: Option<String>) -> Result<()> {
+    pub async fn update_incident_status(
+        &self,
+        incident_id: &str,
+        status: IncidentStatus,
+        notes: Option<String>,
+    ) -> Result<()> {
         let mut registry = self.incident_registry.write().await;
 
         if let Some(incident) = registry.get_mut(incident_id) {
             incident.status = status.clone();
 
             if let Some(notes) = &notes {
-                incident.response_actions.push(format!("Status update: {} - {}", status.to_string(), notes));
+                incident.response_actions.push(format!(
+                    "Status update: {} - {}",
+                    status.to_string(),
+                    notes
+                ));
             }
 
             if status == IncidentStatus::Resolved {
@@ -171,22 +203,36 @@ impl EmergencyResponseEngine {
             }
 
             // Send status update event
-            let _ = self.incident_channel.send(IncidentEvent::StatusUpdate(incident_id.to_string(), status.clone()));
+            let _ = self.incident_channel.send(IncidentEvent::StatusUpdate(
+                incident_id.to_string(),
+                status.clone(),
+            ));
 
             log::info!("Incident {} status updated to {:?}", incident_id, status);
             Ok(())
         } else {
-            Err(BlockchainError::Security(format!("Incident {} not found", incident_id)))
+            Err(BlockchainError::Security(format!(
+                "Incident {} not found",
+                incident_id
+            )))
         }
     }
 
     /// Execute emergency procedure
-    pub async fn execute_emergency_procedure(&self, procedure: EmergencyProcedure) -> Result<ProcedureExecutionResult> {
+    pub async fn execute_emergency_procedure(
+        &self,
+        procedure: EmergencyProcedure,
+    ) -> Result<ProcedureExecutionResult> {
         if !self.config.auto_response_enabled {
-            return Err(BlockchainError::Security("Auto-response is disabled".to_string()));
+            return Err(BlockchainError::Security(
+                "Auto-response is disabled".to_string(),
+            ));
         }
 
-        log::warn!("Executing emergency procedure: {:?}", procedure.procedure_type);
+        log::warn!(
+            "Executing emergency procedure: {:?}",
+            procedure.procedure_type
+        );
 
         let result = match procedure.procedure_type {
             EmergencyProcedureType::SystemShutdown => {
@@ -195,9 +241,7 @@ impl EmergencyResponseEngine {
             EmergencyProcedureType::IsolateComponent => {
                 self.execute_component_isolation(&procedure).await
             }
-            EmergencyProcedureType::Failover => {
-                self.execute_failover(&procedure).await
-            }
+            EmergencyProcedureType::Failover => self.execute_failover(&procedure).await,
             EmergencyProcedureType::SecurityLockdown => {
                 self.execute_security_lockdown(&procedure).await
             }
@@ -206,7 +250,10 @@ impl EmergencyResponseEngine {
         // Log procedure execution
         match &result {
             Ok(execution_result) => {
-                let _ = self.incident_channel.send(IncidentEvent::ProcedureExecuted(procedure, execution_result.clone()));
+                let _ = self.incident_channel.send(IncidentEvent::ProcedureExecuted(
+                    procedure,
+                    execution_result.clone(),
+                ));
             }
             Err(_) => {
                 // Still log even on error
@@ -217,7 +264,9 @@ impl EmergencyResponseEngine {
                     errors: vec!["Procedure execution failed".to_string()],
                     execution_time_seconds: 0,
                 };
-                let _ = self.incident_channel.send(IncidentEvent::ProcedureExecuted(procedure, error_result));
+                let _ = self
+                    .incident_channel
+                    .send(IncidentEvent::ProcedureExecuted(procedure, error_result));
             }
         }
 
@@ -232,7 +281,10 @@ impl EmergencyResponseEngine {
 
         let overall_health = if circuit_breaker_status.is_tripped {
             SystemHealth::Critical
-        } else if active_incidents.iter().any(|i| i.severity >= IncidentSeverity::High) {
+        } else if active_incidents
+            .iter()
+            .any(|i| i.severity >= IncidentSeverity::High)
+        {
             SystemHealth::Degraded
         } else if health_checks.iter().any(|h| !h.healthy) {
             SystemHealth::Warning
@@ -250,14 +302,30 @@ impl EmergencyResponseEngine {
     }
 
     /// Generate emergency response report
-    pub async fn generate_emergency_report(&self, start_date: u64, end_date: u64) -> Result<EmergencyReport> {
+    pub async fn generate_emergency_report(
+        &self,
+        start_date: u64,
+        end_date: u64,
+    ) -> Result<EmergencyReport> {
         let incidents = self.get_incidents_in_range(start_date, end_date).await?;
-        let health_history = self.health_monitor.get_health_history(start_date, end_date).await?;
-        let circuit_breaker_events = self.circuit_breaker.get_event_history(start_date, end_date).await?;
+        let health_history = self
+            .health_monitor
+            .get_health_history(start_date, end_date)
+            .await?;
+        let circuit_breaker_events = self
+            .circuit_breaker
+            .get_event_history(start_date, end_date)
+            .await?;
 
         let total_incidents = incidents.len();
-        let resolved_incidents = incidents.iter().filter(|i| i.status == IncidentStatus::Resolved).count();
-        let critical_incidents = incidents.iter().filter(|i| i.severity == IncidentSeverity::Critical).count();
+        let resolved_incidents = incidents
+            .iter()
+            .filter(|i| i.status == IncidentStatus::Resolved)
+            .count();
+        let critical_incidents = incidents
+            .iter()
+            .filter(|i| i.severity == IncidentSeverity::Critical)
+            .count();
         let avg_resolution_time = self.calculate_average_resolution_time(&incidents);
 
         Ok(EmergencyReport {
@@ -289,7 +357,9 @@ impl EmergencyResponseEngine {
                         IncidentEvent::NewIncident(incident) => {
                             // Send notifications
                             if config.emergency_notification_enabled {
-                                let _ = notification_engine.send_incident_notification(&incident).await;
+                                let _ = notification_engine
+                                    .send_incident_notification(&incident)
+                                    .await;
                             }
 
                             // Auto-assign if possible
@@ -297,15 +367,20 @@ impl EmergencyResponseEngine {
                         }
                         IncidentEvent::EscalateIncident(incident_id) => {
                             if let Some(incident) = registry.read().await.get(&incident_id) {
-                                let _ = notification_engine.send_escalation_notification(incident).await;
+                                let _ = notification_engine
+                                    .send_escalation_notification(incident)
+                                    .await;
                             }
                         }
                         IncidentEvent::StatusUpdate(incident_id, status) => {
                             log::info!("Incident {} status updated to {:?}", incident_id, status);
                         }
                         IncidentEvent::ProcedureExecuted(procedure, result) => {
-                            log::warn!("Emergency procedure executed: {:?} - Success: {}",
-                                      procedure.procedure_type, result.success);
+                            log::warn!(
+                                "Emergency procedure executed: {:?} - Success: {}",
+                                procedure.procedure_type,
+                                result.success
+                            );
                         }
                     }
                 }
@@ -315,14 +390,17 @@ impl EmergencyResponseEngine {
 
     fn estimate_resolution_time(&self, severity: IncidentSeverity) -> u64 {
         match severity {
-            IncidentSeverity::Low => 3600,      // 1 hour
-            IncidentSeverity::Medium => 7200,   // 2 hours
-            IncidentSeverity::High => 14400,    // 4 hours
+            IncidentSeverity::Low => 3600,       // 1 hour
+            IncidentSeverity::Medium => 7200,    // 2 hours
+            IncidentSeverity::High => 14400,     // 4 hours
             IncidentSeverity::Critical => 28800, // 8 hours
         }
     }
 
-    async fn execute_system_shutdown(&self, _procedure: &EmergencyProcedure) -> Result<ProcedureExecutionResult> {
+    async fn execute_system_shutdown(
+        &self,
+        _procedure: &EmergencyProcedure,
+    ) -> Result<ProcedureExecutionResult> {
         // TODO: Implement safe system shutdown
         log::error!("SYSTEM SHUTDOWN PROCEDURE EXECUTED - This is a simulation");
         Ok(ProcedureExecutionResult {
@@ -334,9 +412,15 @@ impl EmergencyResponseEngine {
         })
     }
 
-    async fn execute_component_isolation(&self, procedure: &EmergencyProcedure) -> Result<ProcedureExecutionResult> {
+    async fn execute_component_isolation(
+        &self,
+        procedure: &EmergencyProcedure,
+    ) -> Result<ProcedureExecutionResult> {
         // TODO: Implement component isolation
-        log::warn!("Component isolation procedure executed for: {:?}", procedure.target_components);
+        log::warn!(
+            "Component isolation procedure executed for: {:?}",
+            procedure.target_components
+        );
         Ok(ProcedureExecutionResult {
             procedure_id: format!("isolation_{}", current_timestamp()),
             success: true,
@@ -346,7 +430,10 @@ impl EmergencyResponseEngine {
         })
     }
 
-    async fn execute_failover(&self, _procedure: &EmergencyProcedure) -> Result<ProcedureExecutionResult> {
+    async fn execute_failover(
+        &self,
+        _procedure: &EmergencyProcedure,
+    ) -> Result<ProcedureExecutionResult> {
         // TODO: Implement failover procedures
         log::info!("Failover procedure executed");
         Ok(ProcedureExecutionResult {
@@ -358,7 +445,10 @@ impl EmergencyResponseEngine {
         })
     }
 
-    async fn execute_security_lockdown(&self, _procedure: &EmergencyProcedure) -> Result<ProcedureExecutionResult> {
+    async fn execute_security_lockdown(
+        &self,
+        _procedure: &EmergencyProcedure,
+    ) -> Result<ProcedureExecutionResult> {
         // TODO: Implement security lockdown
         log::error!("SECURITY LOCKDOWN ACTIVATED - High security measures enabled");
         Ok(ProcedureExecutionResult {
@@ -372,22 +462,29 @@ impl EmergencyResponseEngine {
 
     async fn get_active_incidents(&self) -> Result<Vec<Incident>> {
         let registry = self.incident_registry.read().await;
-        Ok(registry.values()
+        Ok(registry
+            .values()
             .filter(|i| i.status == IncidentStatus::Active)
             .cloned()
             .collect())
     }
 
-    async fn get_incidents_in_range(&self, start_date: u64, end_date: u64) -> Result<Vec<Incident>> {
+    async fn get_incidents_in_range(
+        &self,
+        start_date: u64,
+        end_date: u64,
+    ) -> Result<Vec<Incident>> {
         let registry = self.incident_registry.read().await;
-        Ok(registry.values()
+        Ok(registry
+            .values()
             .filter(|i| i.detected_at >= start_date && i.detected_at <= end_date)
             .cloned()
             .collect())
     }
 
     fn calculate_average_resolution_time(&self, incidents: &[Incident]) -> f64 {
-        let resolved_incidents: Vec<_> = incidents.iter()
+        let resolved_incidents: Vec<_> = incidents
+            .iter()
             .filter(|i| i.status == IncidentStatus::Resolved && i.resolved_at.is_some())
             .collect();
 
@@ -395,17 +492,21 @@ impl EmergencyResponseEngine {
             return 0.0;
         }
 
-        let total_resolution_time: u64 = resolved_incidents.iter()
+        let total_resolution_time: u64 = resolved_incidents
+            .iter()
             .map(|i| i.resolved_at.unwrap() - i.detected_at)
             .sum();
 
-        (total_resolution_time as f64) / (resolved_incidents.len() as f64) / 3600.0 // Convert to hours
+        (total_resolution_time as f64) / (resolved_incidents.len() as f64) / 3600.0
+        // Convert to hours
     }
 
     fn group_incidents_by_type(&self, incidents: &[Incident]) -> HashMap<String, usize> {
         let mut groups = HashMap::new();
         for incident in incidents {
-            *groups.entry(incident.incident_type.to_string()).or_insert(0) += 1;
+            *groups
+                .entry(incident.incident_type.to_string())
+                .or_insert(0) += 1;
         }
         groups
     }
@@ -413,7 +514,9 @@ impl EmergencyResponseEngine {
     fn group_incidents_by_severity(&self, incidents: &[Incident]) -> HashMap<String, usize> {
         let mut groups = HashMap::new();
         for incident in incidents {
-            *groups.entry(format!("{:?}", incident.severity)).or_insert(0) += 1;
+            *groups
+                .entry(format!("{:?}", incident.severity))
+                .or_insert(0) += 1;
         }
         groups
     }
@@ -666,7 +769,11 @@ impl CircuitBreaker {
         }
     }
 
-    pub async fn get_event_history(&self, _start_date: u64, _end_date: u64) -> Result<Vec<CircuitBreakerEvent>> {
+    pub async fn get_event_history(
+        &self,
+        _start_date: u64,
+        _end_date: u64,
+    ) -> Result<Vec<CircuitBreakerEvent>> {
         let history = self.event_history.read().await;
         Ok(history.clone())
     }
@@ -707,12 +814,27 @@ impl NotificationEngine {
 
     pub async fn send_incident_notification(&self, _incident: &Incident) -> Result<()> {
         for contact in &self.contacts {
-            if contact.notification_methods.contains(&NotificationMethod::Email) {
-                log::info!("Sending incident notification to {} ({})", contact.name, contact.email);
+            if contact
+                .notification_methods
+                .contains(&NotificationMethod::Email)
+            {
+                log::info!(
+                    "Sending incident notification to {} ({})",
+                    contact.name,
+                    contact.email
+                );
                 // TODO: Implement actual email sending
             }
-            if contact.notification_methods.contains(&NotificationMethod::SMS) && contact.phone.is_some() {
-                log::info!("Sending SMS notification to {} ({})", contact.name, contact.phone.as_ref().unwrap());
+            if contact
+                .notification_methods
+                .contains(&NotificationMethod::SMS)
+                && contact.phone.is_some()
+            {
+                log::info!(
+                    "Sending SMS notification to {} ({})",
+                    contact.name,
+                    contact.phone.as_ref().unwrap()
+                );
                 // TODO: Implement SMS sending
             }
         }
@@ -720,7 +842,11 @@ impl NotificationEngine {
     }
 
     pub async fn send_escalation_notification(&self, incident: &Incident) -> Result<()> {
-        log::error!("INCIDENT ESCALATION: {} - Severity: {:?}", incident.description, incident.severity);
+        log::error!(
+            "INCIDENT ESCALATION: {} - Severity: {:?}",
+            incident.description,
+            incident.severity
+        );
         self.send_incident_notification(incident).await
     }
 }
@@ -767,7 +893,11 @@ impl HealthMonitor {
         Ok(results)
     }
 
-    pub async fn get_health_history(&self, _start_date: u64, _end_date: u64) -> Result<Vec<HealthCheckResult>> {
+    pub async fn get_health_history(
+        &self,
+        _start_date: u64,
+        _end_date: u64,
+    ) -> Result<Vec<HealthCheckResult>> {
         let checks = self.health_checks.read().await;
         Ok(checks.clone())
     }

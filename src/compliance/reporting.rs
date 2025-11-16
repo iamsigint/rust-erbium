@@ -18,11 +18,18 @@ impl ComplianceReporter {
         Self
     }
 
-    pub async fn log_compliance_check(&self, _results: &super::ComplianceCheckResults) -> Result<()> {
+    pub async fn log_compliance_check(
+        &self,
+        _results: &super::ComplianceCheckResults,
+    ) -> Result<()> {
         Ok(())
     }
 
-    pub async fn generate_report(&self, _start_date: u64, _end_date: u64) -> Result<ComplianceReport> {
+    pub async fn generate_report(
+        &self,
+        _start_date: u64,
+        _end_date: u64,
+    ) -> Result<ComplianceReport> {
         Ok(ComplianceReport)
     }
 

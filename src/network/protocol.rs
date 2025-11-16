@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use crate::core::{Block, Transaction};
 use crate::core::types::Hash;
+use crate::core::{Block, Transaction};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NetworkMessage {
@@ -8,20 +8,20 @@ pub enum NetworkMessage {
     NewBlock(Block),
     RequestBlock(Hash),
     ResponseBlock(Block),
-    
+
     // Transaction propagation
     NewTransaction(Transaction),
-    
+
     // Chain synchronization
     RequestBlocks(Vec<Hash>), // Request specific blocks
-    RequestChainSync(u64), // Request blocks from specific height
-    
+    RequestChainSync(u64),    // Request blocks from specific height
+
     // Peer discovery
     PeerList(Vec<String>), // List of peer addresses
-    
+
     // Consensus messages
     Vote(VoteMessage),
-    
+
     // Bridge messages
     CrossChainMessage(CrossChainData),
 }
@@ -45,7 +45,7 @@ impl NetworkMessage {
     pub fn serialize(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         Ok(bincode::serialize(self)?)
     }
-    
+
     pub fn deserialize(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(bincode::deserialize(data)?)
     }

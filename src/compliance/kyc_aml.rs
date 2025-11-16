@@ -8,8 +8,8 @@
 //! - Regulatory reporting
 //! - Integration with external KYC providers
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -40,15 +40,8 @@ impl Default for KycAmlConfig {
             large_transaction_threshold: 1_000, // 1k ERB
             aml_monitoring_enabled: true,
             suspicious_activity_reporting: true,
-            external_providers: vec![
-                KycProvider::Sumsub,
-                KycProvider::Onfido,
-            ],
-            compliance_jurisdictions: vec![
-                "US".to_string(),
-                "EU".to_string(),
-                "SG".to_string(),
-            ],
+            external_providers: vec![KycProvider::Sumsub, KycProvider::Onfido],
+            compliance_jurisdictions: vec!["US".to_string(), "EU".to_string(), "SG".to_string()],
         }
     }
 }
@@ -85,15 +78,23 @@ impl KycAmlEngine {
             // TODO: Initialize provider API connections
         }
 
-        log::info!("KYC/AML engine initialized for {} jurisdictions",
-                  self.config.compliance_jurisdictions.len());
+        log::info!(
+            "KYC/AML engine initialized for {} jurisdictions",
+            self.config.compliance_jurisdictions.len()
+        );
         Ok(())
     }
 
     /// Register new user for KYC verification
-    pub async fn register_user(&self, user_id: &str, user_data: UserRegistrationData) -> Result<KycVerificationRequest> {
+    pub async fn register_user(
+        &self,
+        user_id: &str,
+        user_data: UserRegistrationData,
+    ) -> Result<KycVerificationRequest> {
         if !self.config.enabled {
-            return Err(BlockchainError::Compliance("KYC/AML is disabled".to_string()));
+            return Err(BlockchainError::Compliance(
+                "KYC/AML is disabled".to_string(),
+            ));
         }
 
         let mut registry = self.user_registry.write().await;
@@ -134,11 +135,17 @@ impl KycAmlEngine {
             profile.documents_submitted.extend(documents);
             profile.verification_status = KycStatus::UnderReview;
 
-            log::info!("KYC documents submitted for user: {} ({} documents)",
-                      user_id, profile.documents_submitted.len());
+            log::info!(
+                "KYC documents submitted for user: {} ({} documents)",
+                user_id,
+                profile.documents_submitted.len()
+            );
             Ok(())
         } else {
-            Err(BlockchainError::Compliance(format!("User {} not found in KYC registry", user_id)))
+            Err(BlockchainError::Compliance(format!(
+                "User {} not found in KYC registry",
+                user_id
+            )))
         }
     }
 
@@ -163,8 +170,16 @@ impl KycAmlEngine {
                 risk_level: risk_assessment.overall_risk_level,
                 risk_score: risk_assessment.overall_risk,
                 verification_status: profile.verification_status.clone(),
-                approved_at: if approved { Some(current_timestamp()) } else { None },
-                rejection_reason: if !approved { Some("Risk assessment failed".to_string()) } else { None },
+                approved_at: if approved {
+                    Some(current_timestamp())
+                } else {
+                    None
+                },
+                rejection_reason: if !approved {
+                    Some("Risk assessment failed".to_string())
+                } else {
+                    None
+                },
                 compliance_flags: profile.compliance_flags.clone(),
             };
 
@@ -179,15 +194,25 @@ impl KycAmlEngine {
                 }
             }
 
-            log::info!("KYC verification completed for user: {} - Approved: {}", user_id, approved);
+            log::info!(
+                "KYC verification completed for user: {} - Approved: {}",
+                user_id,
+                approved
+            );
             Ok(result)
         } else {
-            Err(BlockchainError::Compliance(format!("User {} not found in KYC registry", user_id)))
+            Err(BlockchainError::Compliance(format!(
+                "User {} not found in KYC registry",
+                user_id
+            )))
         }
     }
 
     /// Check transaction compliance
-    pub async fn check_transaction_compliance(&self, transaction: &TransactionData) -> Result<TransactionComplianceResult> {
+    pub async fn check_transaction_compliance(
+        &self,
+        transaction: &TransactionData,
+    ) -> Result<TransactionComplianceResult> {
         if !self.config.enabled {
             return Ok(TransactionComplianceResult {
                 approved: true,
@@ -199,7 +224,8 @@ impl KycAmlEngine {
 
         // Check user KYC status
         let registry = self.user_registry.read().await;
-        let user_verified = registry.get(&transaction.from_user_id)
+        let user_verified = registry
+            .get(&transaction.from_user_id)
             .map(|p| p.verification_status == KycStatus::Approved)
             .unwrap_or(false);
 
@@ -224,7 +250,10 @@ impl KycAmlEngine {
 
         // AML monitoring
         if self.config.aml_monitoring_enabled {
-            let aml_result = self.transaction_monitor.analyze_transaction(transaction).await?;
+            let aml_result = self
+                .transaction_monitor
+                .analyze_transaction(transaction)
+                .await?;
 
             if aml_result.suspicious_score > 0.7 {
                 return Ok(TransactionComplianceResult {
@@ -245,22 +274,35 @@ impl KycAmlEngine {
     }
 
     /// Generate compliance report
-    pub async fn generate_compliance_report(&self, start_date: u64, end_date: u64) -> Result<KycAmlReport> {
+    pub async fn generate_compliance_report(
+        &self,
+        start_date: u64,
+        end_date: u64,
+    ) -> Result<KycAmlReport> {
         let registry = self.user_registry.read().await;
 
         let total_users = registry.len();
-        let verified_users = registry.values()
+        let verified_users = registry
+            .values()
             .filter(|p| p.verification_status == KycStatus::Approved)
             .count();
-        let pending_users = registry.values()
-            .filter(|p| p.verification_status == KycStatus::Pending || p.verification_status == KycStatus::UnderReview)
+        let pending_users = registry
+            .values()
+            .filter(|p| {
+                p.verification_status == KycStatus::Pending
+                    || p.verification_status == KycStatus::UnderReview
+            })
             .count();
-        let rejected_users = registry.values()
+        let rejected_users = registry
+            .values()
             .filter(|p| p.verification_status == KycStatus::Rejected)
             .count();
 
         // Get transaction monitoring stats
-        let transaction_stats = self.transaction_monitor.get_statistics(start_date, end_date).await?;
+        let transaction_stats = self
+            .transaction_monitor
+            .get_statistics(start_date, end_date)
+            .await?;
 
         Ok(KycAmlReport {
             report_period: (start_date, end_date),
@@ -269,7 +311,11 @@ impl KycAmlEngine {
             verified_users,
             pending_users,
             rejected_users,
-            verification_rate: if total_users > 0 { verified_users as f64 / total_users as f64 } else { 0.0 },
+            verification_rate: if total_users > 0 {
+                verified_users as f64 / total_users as f64
+            } else {
+                0.0
+            },
             transaction_stats,
             compliance_flags_raised: 0, // TODO: implement flag tracking
             jurisdictions_covered: self.config.compliance_jurisdictions.len(),
@@ -279,8 +325,16 @@ impl KycAmlEngine {
     // Helper methods
     fn get_required_documents(&self, jurisdiction: &str) -> Vec<DocumentType> {
         match jurisdiction {
-            "US" => vec![DocumentType::GovernmentId, DocumentType::ProofOfAddress, DocumentType::SSN],
-            "EU" => vec![DocumentType::Passport, DocumentType::ProofOfAddress, DocumentType::TaxId],
+            "US" => vec![
+                DocumentType::GovernmentId,
+                DocumentType::ProofOfAddress,
+                DocumentType::SSN,
+            ],
+            "EU" => vec![
+                DocumentType::Passport,
+                DocumentType::ProofOfAddress,
+                DocumentType::TaxId,
+            ],
             "SG" => vec![DocumentType::NRIC, DocumentType::ProofOfAddress],
             _ => vec![DocumentType::GovernmentId, DocumentType::ProofOfAddress],
         }
@@ -498,7 +552,9 @@ impl RiskAssessmentEngine {
             risk_score += 0.8;
             risk_factors.push("No documents submitted".to_string());
         } else {
-            let verified_docs = profile.documents_submitted.iter()
+            let verified_docs = profile
+                .documents_submitted
+                .iter()
                 .filter(|d| d.verification_status == DocumentVerificationStatus::Verified)
                 .count();
             if verified_docs == 0 {
@@ -551,7 +607,10 @@ impl TransactionMonitor {
         Self
     }
 
-    pub async fn analyze_transaction(&self, transaction: &TransactionData) -> Result<AmlAnalysisResult> {
+    pub async fn analyze_transaction(
+        &self,
+        transaction: &TransactionData,
+    ) -> Result<AmlAnalysisResult> {
         let mut suspicious_score: f64 = 0.0;
         let mut flags = vec![];
 
@@ -586,7 +645,11 @@ impl TransactionMonitor {
         })
     }
 
-    pub async fn get_statistics(&self, _start_date: u64, _end_date: u64) -> Result<TransactionStats> {
+    pub async fn get_statistics(
+        &self,
+        _start_date: u64,
+        _end_date: u64,
+    ) -> Result<TransactionStats> {
         // TODO: Implement actual statistics collection
         Ok(TransactionStats {
             total_transactions: 1000,
@@ -666,7 +729,9 @@ mod tests {
 
         let request = result.unwrap();
         assert_eq!(request.user_id, "user123");
-        assert!(request.requested_documents.contains(&DocumentType::GovernmentId));
+        assert!(request
+            .requested_documents
+            .contains(&DocumentType::GovernmentId));
     }
 
     #[tokio::test]

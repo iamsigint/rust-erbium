@@ -1,8 +1,8 @@
 // src/core/block.rs
-use serde::{Deserialize, Serialize};
-use crate::core::types::{Hash, Timestamp, Nonce};
 use crate::core::transaction::Transaction;
+use crate::core::types::{Hash, Nonce, Timestamp};
 use crate::utils::error::Result;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockHeader {
@@ -33,7 +33,7 @@ impl Block {
     ) -> Self {
         let merkle_root = Self::calculate_merkle_root(&transactions);
         let timestamp = chrono::Utc::now().timestamp_millis() as u64;
-        
+
         let header = BlockHeader {
             number, // Set block number
             version: 1,
@@ -44,27 +44,24 @@ impl Block {
             nonce: Nonce(0),
             validator,
         };
-        
+
         Block {
             header,
             transactions,
             signature: Vec::new(),
         }
     }
-    
+
     pub fn calculate_merkle_root(transactions: &[Transaction]) -> Hash {
         if transactions.is_empty() {
             return Hash::new(b"empty");
         }
-        
-        let mut hashes: Vec<Hash> = transactions
-            .iter()
-            .map(|tx| tx.hash())
-            .collect();
-            
+
+        let mut hashes: Vec<Hash> = transactions.iter().map(|tx| tx.hash()).collect();
+
         while hashes.len() > 1 {
             let mut next_level = Vec::new();
-            
+
             for chunk in hashes.chunks(2) {
                 let combined = if chunk.len() == 2 {
                     let mut combined = chunk[0].as_bytes().to_vec();
@@ -75,18 +72,18 @@ impl Block {
                 };
                 next_level.push(combined);
             }
-            
+
             hashes = next_level;
         }
-        
+
         hashes[0]
     }
-    
+
     pub fn hash(&self) -> Hash {
         let header_data = bincode::serialize(&self.header).unwrap();
         Hash::new(&header_data)
     }
-    
+
     // Corrected return type from Result<(), BlockchainError> to Result<()>
     pub fn sign(&mut self, private_key: &[u8]) -> Result<()> {
         use crate::crypto::dilithium::Dilithium;
@@ -94,12 +91,12 @@ impl Block {
         self.signature = Dilithium::sign(private_key, block_hash.as_bytes())?;
         Ok(())
     }
-    
+
     // Corrected return type from Result<bool, BlockchainError> to Result<bool>
     pub fn verify_signature(&self, public_key: &[u8]) -> Result<bool> {
         // Use the static Dilithium struct for verification, not a Keypair instance
         use crate::crypto::dilithium::Dilithium;
-        
+
         let block_hash = self.hash();
         // Call the static verify function
         Dilithium::verify(public_key, block_hash.as_bytes(), &self.signature)

@@ -1,7 +1,7 @@
 // src/core/precompiles.rs
 
 use crate::core::{Address, Hash};
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
 
 /// Precompiled Contract Addresses (0x000...001 to 0x000...010)
 pub const DILITHIUM_VERIFY_ADDR: &str = "0x0000000000000000000000000000000000000001";
@@ -38,7 +38,9 @@ impl PrecompileManager {
             BLAKE3_ADDR => Self::blake3(input, gas_limit),
             BIG_INT_MODEXP_ADDR => Self::big_int_modexp(input, gas_limit),
             POINT_ADD_ADDR => Self::point_add(input, gas_limit),
-            _ => Err(BlockchainError::VM("Unknown precompile address".to_string())),
+            _ => Err(BlockchainError::VM(
+                "Unknown precompile address".to_string(),
+            )),
         }
     }
 
@@ -189,7 +191,7 @@ impl PrecompileManager {
             });
         }
 
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(input);
         let result = hasher.finalize();

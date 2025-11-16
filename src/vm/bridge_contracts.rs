@@ -1,7 +1,7 @@
 //! Bridge contract implementations for cross-chain interoperability
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 
 /// Bridge contract for cross-chain transfers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +42,12 @@ impl BridgeContract {
     }
 
     /// Initiate a cross-chain transfer
-    pub fn initiate_transfer(&mut self, sender: String, recipient: String, amount: u64) -> Result<u64> {
+    pub fn initiate_transfer(
+        &mut self,
+        sender: String,
+        recipient: String,
+        amount: u64,
+    ) -> Result<u64> {
         let transfer_id = self.pending_transfers.len() as u64 + 1;
         let transfer = PendingTransfer {
             id: transfer_id,
@@ -61,7 +66,11 @@ impl BridgeContract {
 
     /// Complete a transfer
     pub fn complete_transfer(&mut self, transfer_id: u64) -> Result<()> {
-        if let Some(transfer) = self.pending_transfers.iter_mut().find(|t| t.id == transfer_id) {
+        if let Some(transfer) = self
+            .pending_transfers
+            .iter_mut()
+            .find(|t| t.id == transfer_id)
+        {
             if transfer.status == TransferStatus::Locked {
                 transfer.status = TransferStatus::Completed;
                 self.locked_tokens -= transfer.amount;
@@ -76,7 +85,11 @@ impl BridgeContract {
 
     /// Lock tokens for transfer
     pub fn lock_tokens(&mut self, transfer_id: u64) -> Result<()> {
-        if let Some(transfer) = self.pending_transfers.iter_mut().find(|t| t.id == transfer_id) {
+        if let Some(transfer) = self
+            .pending_transfers
+            .iter_mut()
+            .find(|t| t.id == transfer_id)
+        {
             if transfer.status == TransferStatus::Pending {
                 transfer.status = TransferStatus::Locked;
                 Ok(())

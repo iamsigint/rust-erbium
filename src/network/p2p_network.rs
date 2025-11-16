@@ -1,16 +1,22 @@
 // src/network/p2p_network.rs
 
-use crate::core::{Block, Transaction};
 use crate::core::chain::PersistentBlockchain;
-use crate::utils::error::{Result, BlockchainError};
-use crate::network::dht::{DHT, DHTConfig};
+use crate::core::{Block, Transaction};
+use crate::network::dht::{DHTConfig, DHT};
 use crate::network::discovery::PeerDiscovery;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
-use tokio::time::{self, Duration};
+use crate::network::opportunistic::{OpportunisticDiscovery, OpportunisticDiscoveryConfig};
+use crate::utils::error::{BlockchainError, Result};
+use libp2p::multiaddr::Protocol;
+use libp2p::Multiaddr;
+use local_ip_address::{list_afinet_netifas, local_ip};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+use tokio::sync::{mpsc, watch, RwLock};
+use tokio::task::JoinHandle;
+use tokio::time::{self, Duration};
 use toml;
 
 /// Bootstrap node configuration from TOML file
@@ -32,7 +38,7 @@ struct BootstrapBehavior {
     use_development_nodes: bool,
     allow_hardcoded_fallback: bool, // TODO: Currently unused - will be used for DHT fallback
     bootstrap_timeout_seconds: u64, // TODO: Currently unused - will be used for bootstrap timeouts
-    max_bootstrap_attempts: usize, // TODO: Currently unused - will be used for bootstrap retries
+    max_bootstrap_attempts: usize,  // TODO: Currently unused - will be used for bootstrap retries
 }
 
 /// Network message types
@@ -77,16 +83,20 @@ pub struct P2PConfig {
     pub sync_interval: Duration,
     pub block_announce_interval: Duration,
     // DHT specific configuration
-    pub dht_k: usize,       // Kademlia K parameter (bucket size)
-    pub dht_alpha: usize,   // Kademlia alpha parameter (parallelism)
+    pub dht_k: usize,     // Kademlia K parameter (bucket size)
+    pub dht_alpha: usize, // Kademlia alpha parameter (parallelism)
     pub dht_refresh_interval: Duration,
+    // Opportunistic discovery configuration
+    pub opportunistic_enabled: bool,
+    pub opportunistic_port: u16,
+    pub opportunistic_interval: Duration,
     // Bootstrap peers are now loaded from config/bootstrap_nodes.toml
 }
 
 impl Default for P2PConfig {
     fn default() -> Self {
         Self {
-            listen_address: "/ip4/0.0.0.0/tcp/0".to_string(),
+            listen_address: "/ip4/0.0.0.0/tcp/30303".to_string(),
             max_peers: 50,
             ping_interval: Duration::from_secs(30),
             sync_interval: Duration::from_secs(10),
@@ -95,6 +105,9 @@ impl Default for P2PConfig {
             dht_k: 20,
             dht_alpha: 3,
             dht_refresh_interval: Duration::from_secs(3600), // 1 hour
+            opportunistic_enabled: true,
+            opportunistic_port: 30303,
+            opportunistic_interval: Duration::from_secs(5),
         }
     }
 }
@@ -105,12 +118,14 @@ pub struct P2PNetwork {
     blockchain: Arc<RwLock<PersistentBlockchain>>,
     peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
     known_blocks: Arc<RwLock<HashSet<String>>>, // Block hashes we know about
-    known_txs: Arc<RwLock<HashSet<String>>>, // Transaction hashes we know about
+    known_txs: Arc<RwLock<HashSet<String>>>,    // Transaction hashes we know about
     message_sender: mpsc::UnboundedSender<NetworkMessage>,
     message_receiver: Arc<RwLock<mpsc::UnboundedReceiver<NetworkMessage>>>,
     // DHT integration for decentralized peer discovery
-    dht: Arc<RwLock<DHT>>,           // Kademlia DHT instance
+    dht: Arc<RwLock<DHT>>,                      // Kademlia DHT instance
     peer_discovery: Arc<RwLock<PeerDiscovery>>, // Traditional peer management
+    opportunistic_tasks: Arc<RwLock<Vec<JoinHandle<()>>>>,
+    opportunistic_shutdown: Arc<RwLock<Option<watch::Sender<bool>>>>,
 }
 
 impl P2PNetwork {
@@ -144,14 +159,13 @@ impl P2PNetwork {
             message_receiver: Arc::new(RwLock::new(rx)),
             dht: Arc::new(RwLock::new(dht)),
             peer_discovery: Arc::new(RwLock::new(peer_discovery)),
+            opportunistic_tasks: Arc::new(RwLock::new(Vec::new())),
+            opportunistic_shutdown: Arc::new(RwLock::new(None)),
         })
     }
 
     /// Create new P2P network (legacy constructor)
-    pub fn new(
-        config: P2PConfig,
-        blockchain: Arc<RwLock<PersistentBlockchain>>,
-    ) -> Self {
+    pub fn new(config: P2PConfig, blockchain: Arc<RwLock<PersistentBlockchain>>) -> Self {
         // For now, forward to new_with_dht but ignore errors
         // In a real implementation, this might create a stub DHT
         match Self::new_with_dht(config, blockchain) {
@@ -170,6 +184,11 @@ impl P2PNetwork {
         // Initialize known blocks and transactions from blockchain
         self.initialize_known_data().await?;
 
+        // Opportunistic peer discovery (best-effort)
+        if let Err(e) = self.start_opportunistic_discovery().await {
+            log::warn!("Opportunistic peer discovery not started: {}", e);
+        }
+
         // Start background tasks
         self.start_background_tasks();
 
@@ -180,6 +199,21 @@ impl P2PNetwork {
     /// Stop the P2P network
     pub async fn stop(&self) -> Result<()> {
         log::info!("Stopping P2P network");
+
+        {
+            let mut shutdown_guard = self.opportunistic_shutdown.write().await;
+            if let Some(sender) = shutdown_guard.take() {
+                let _ = sender.send(true);
+            }
+        }
+
+        {
+            let mut tasks = self.opportunistic_tasks.write().await;
+            for handle in tasks.drain(..) {
+                handle.abort();
+            }
+        }
+
         // Close channels and cleanup
         Ok(())
     }
@@ -206,8 +240,9 @@ impl P2PNetwork {
         let message = NetworkMessage::NewBlock(block.clone());
 
         // Send to message channel for processing
-        self.message_sender.send(message)
-            .map_err(|_| BlockchainError::Network("Failed to send block announcement".to_string()))?;
+        self.message_sender.send(message).map_err(|_| {
+            BlockchainError::Network("Failed to send block announcement".to_string())
+        })?;
 
         log::debug!("Broadcasting block {} to peers", block_hash);
         Ok(())
@@ -235,8 +270,9 @@ impl P2PNetwork {
         let message = NetworkMessage::NewTransaction(transaction.clone());
 
         // Send to message channel for processing
-        self.message_sender.send(message)
-            .map_err(|_| BlockchainError::Network("Failed to send transaction announcement".to_string()))?;
+        self.message_sender.send(message).map_err(|_| {
+            BlockchainError::Network("Failed to send transaction announcement".to_string())
+        })?;
 
         log::debug!("Broadcasting transaction {} to peers", tx_hash);
         Ok(())
@@ -244,12 +280,20 @@ impl P2PNetwork {
 
     /// Request blocks from peers
     pub async fn request_blocks(&self, start_height: u64, count: u32) -> Result<()> {
-        let message = NetworkMessage::BlockRequest { start_height, count };
+        let message = NetworkMessage::BlockRequest {
+            start_height,
+            count,
+        };
 
-        self.message_sender.send(message)
+        self.message_sender
+            .send(message)
             .map_err(|_| BlockchainError::Network("Failed to send block request".to_string()))?;
 
-        log::debug!("Requesting {} blocks starting from height {}", count, start_height);
+        log::debug!(
+            "Requesting {} blocks starting from height {}",
+            count,
+            start_height
+        );
         Ok(())
     }
 
@@ -262,8 +306,12 @@ impl P2PNetwork {
             NetworkMessage::NewTransaction(tx) => {
                 self.handle_new_transaction(tx, peer_id).await?;
             }
-            NetworkMessage::BlockRequest { start_height, count } => {
-                self.handle_block_request(start_height, count, peer_id).await?;
+            NetworkMessage::BlockRequest {
+                start_height,
+                count,
+            } => {
+                self.handle_block_request(start_height, count, peer_id)
+                    .await?;
             }
             NetworkMessage::BlockResponse(blocks) => {
                 self.handle_block_response(blocks, peer_id).await?;
@@ -313,7 +361,11 @@ impl P2PNetwork {
 
         if block.header.number > current_height + 1 {
             // We're missing blocks, request them
-            self.request_blocks(current_height + 1, (block.header.number - current_height) as u32).await?;
+            self.request_blocks(
+                current_height + 1,
+                (block.header.number - current_height) as u32,
+            )
+            .await?;
         } else if block.header.number == current_height + 1 {
             // This is the next block, try to add it
             drop(blockchain);
@@ -325,7 +377,12 @@ impl P2PNetwork {
                     self.broadcast_block(&block).await?;
                 }
                 Err(e) => {
-                    log::warn!("Failed to add block {} from peer {}: {}", block_hash, peer_id, e);
+                    log::warn!(
+                        "Failed to add block {} from peer {}: {}",
+                        block_hash,
+                        peer_id,
+                        e
+                    );
                 }
             }
         }
@@ -362,12 +419,23 @@ impl P2PNetwork {
     }
 
     /// Handle block request from peer
-    async fn handle_block_request(&self, start_height: u64, count: u32, peer_id: &str) -> Result<()> {
+    async fn handle_block_request(
+        &self,
+        start_height: u64,
+        count: u32,
+        peer_id: &str,
+    ) -> Result<()> {
         let mut blocks = Vec::new();
 
         for i in 0..count {
             let height = start_height + i as u64;
-            if let Ok(Some(block)) = self.blockchain.read().await.get_block_by_height(height).await {
+            if let Ok(Some(block)) = self
+                .blockchain
+                .read()
+                .await
+                .get_block_by_height(height)
+                .await
+            {
                 blocks.push(block);
             } else {
                 break; // No more blocks
@@ -376,11 +444,17 @@ impl P2PNetwork {
 
         if !blocks.is_empty() {
             let response = NetworkMessage::BlockResponse(blocks.clone());
-            self.message_sender.send(response)
-                .map_err(|_| BlockchainError::Network("Failed to send block response".to_string()))?;
+            self.message_sender.send(response).map_err(|_| {
+                BlockchainError::Network("Failed to send block response".to_string())
+            })?;
         }
 
-        log::debug!("Sent {} blocks to peer {} starting from height {}", blocks.len(), peer_id, start_height);
+        log::debug!(
+            "Sent {} blocks to peer {} starting from height {}",
+            blocks.len(),
+            peer_id,
+            start_height
+        );
         Ok(())
     }
 
@@ -404,25 +478,40 @@ impl P2PNetwork {
         let mut transactions = Vec::new();
 
         for hash in hashes {
-            if let Ok(Some(tx)) = self.blockchain.read().await.get_transaction_by_hash(hash.as_bytes()).await {
+            if let Ok(Some(tx)) = self
+                .blockchain
+                .read()
+                .await
+                .get_transaction_by_hash(hash.as_bytes())
+                .await
+            {
                 transactions.push(tx);
             }
         }
 
         if !transactions.is_empty() {
             let response = NetworkMessage::TransactionResponse(transactions);
-            self.message_sender.send(response)
-                .map_err(|_| BlockchainError::Network("Failed to send transaction response".to_string()))?;
+            self.message_sender.send(response).map_err(|_| {
+                BlockchainError::Network("Failed to send transaction response".to_string())
+            })?;
         }
 
         Ok(())
     }
 
     /// Handle transaction response from peer
-    async fn handle_transaction_response(&self, transactions: Vec<Transaction>, peer_id: &str) -> Result<()> {
+    async fn handle_transaction_response(
+        &self,
+        transactions: Vec<Transaction>,
+        peer_id: &str,
+    ) -> Result<()> {
         // For now, just log the transactions
         // In a full implementation, this would add to mempool
-        log::debug!("Received {} transactions from peer {}", transactions.len(), peer_id);
+        log::debug!(
+            "Received {} transactions from peer {}",
+            transactions.len(),
+            peer_id
+        );
         Ok(())
     }
 
@@ -434,7 +523,12 @@ impl P2PNetwork {
             peer.last_seen = current_timestamp();
         }
 
-        log::debug!("Peer {} status: height={}, peers={}", peer_id, height, peer_count);
+        log::debug!(
+            "Peer {} status: height={}, peers={}",
+            peer_id,
+            height,
+            peer_count
+        );
         Ok(())
     }
 
@@ -442,7 +536,8 @@ impl P2PNetwork {
     async fn handle_ping(&self, peer_id: &str) -> Result<()> {
         // Send pong response
         let pong = NetworkMessage::Pong;
-        self.message_sender.send(pong)
+        self.message_sender
+            .send(pong)
             .map_err(|_| BlockchainError::Network("Failed to send pong".to_string()))?;
 
         // Update peer last seen
@@ -467,7 +562,10 @@ impl P2PNetwork {
 
         // For now, we'll initialize with some basic data
         // In a full implementation, this would scan the blockchain
-        log::info!("Initialized P2P network with blockchain height: {}", latest_height);
+        log::info!(
+            "Initialized P2P network with blockchain height: {}",
+            latest_height
+        );
 
         Ok(())
     }
@@ -603,9 +701,11 @@ impl P2PNetwork {
 
                     // TODO: Attempt P2P connection to discovered peer
                     // In a full implementation, this would establish new P2P connections
-                    log::info!("Discovered new peer via DHT: {} at {}",
-                              contact.node_id.to_hex(),
-                              contact.address);
+                    log::info!(
+                        "Discovered new peer via DHT: {} at {}",
+                        contact.node_id.to_hex(),
+                        contact.address
+                    );
                 }
             }
         }
@@ -643,6 +743,63 @@ impl P2PNetwork {
         Ok(())
     }
 
+    async fn start_opportunistic_discovery(&self) -> Result<()> {
+        if !self.config.opportunistic_enabled {
+            return Ok(());
+        }
+
+        let advertised_addr = match self.determine_advertised_socket()? {
+            Some(addr) => addr,
+            None => {
+                log::warn!(
+                    "Unable to determine advertised address for opportunistic discovery; skipping"
+                );
+                return Ok(());
+            }
+        };
+
+        let node_id = {
+            let dht_guard = self.dht.read().await;
+            *dht_guard.node_id()
+        };
+
+        let discovery_config = OpportunisticDiscoveryConfig {
+            port: self.config.opportunistic_port,
+            interval: self.config.opportunistic_interval,
+            max_packet_size: 2048,
+        };
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handles = OpportunisticDiscovery::spawn(
+            discovery_config,
+            advertised_addr,
+            node_id,
+            Arc::clone(&self.dht),
+            Arc::clone(&self.peer_discovery),
+            shutdown_rx,
+        )
+        .await?;
+
+        {
+            let mut shutdown_guard = self.opportunistic_shutdown.write().await;
+            *shutdown_guard = Some(shutdown_tx);
+        }
+
+        {
+            let mut tasks_guard = self.opportunistic_tasks.write().await;
+            tasks_guard.extend(handles);
+        }
+
+        log::info!(
+            "Opportunistic discovery broadcasting {} on UDP port {}",
+            advertised_addr,
+            self.config.opportunistic_port
+        );
+
+        Ok(())
+    }
+
     /// Get network statistics
     pub async fn get_stats(&self) -> Result<NetworkStats> {
         let peers = self.peers.read().await;
@@ -675,10 +832,16 @@ impl P2PNetwork {
             }
         };
 
-        log::info!("Initializing DHT with {} bootstrap peers...", bootstrap_peers.len());
+        log::info!(
+            "Initializing DHT with {} bootstrap peers...",
+            bootstrap_peers.len()
+        );
 
         for bootstrap_addr in &bootstrap_peers {
-            match self.parse_and_add_bootstrap_node(&mut dht, bootstrap_addr).await {
+            match self
+                .parse_and_add_bootstrap_node(&mut dht, bootstrap_addr)
+                .await
+            {
                 Ok(_) => {
                     successful_bootstrap += 1;
                     log::debug!("Added bootstrap node: {}", bootstrap_addr);
@@ -690,12 +853,22 @@ impl P2PNetwork {
         }
 
         if successful_bootstrap == 0 {
-            log::warn!("No bootstrap nodes could be initialized - network may not function properly");
-            return Err(BlockchainError::Network("No bootstrap nodes available".to_string()));
-        }
+            log::warn!("No bootstrap nodes could be initialized from configuration");
 
-        log::info!("DHT initialized with {}/{} bootstrap nodes successfully",
-                  successful_bootstrap, bootstrap_peers.len());
+            if !self.config.opportunistic_enabled {
+                return Err(BlockchainError::Network(
+                    "No bootstrap nodes available".to_string(),
+                ));
+            }
+
+            log::info!("Falling back to opportunistic peer discovery with UDP broadcasts");
+        } else {
+            log::info!(
+                "DHT initialized with {}/{} bootstrap nodes successfully",
+                successful_bootstrap,
+                bootstrap_peers.len()
+            );
+        }
         Ok(())
     }
 
@@ -704,12 +877,14 @@ impl P2PNetwork {
         let config_path = "config/bootstrap_nodes.toml";
 
         // Read the TOML file
-        let config_content = fs::read_to_string(config_path)
-            .map_err(|e| BlockchainError::Network(format!("Failed to read bootstrap config: {}", e)))?;
+        let config_content = fs::read_to_string(config_path).map_err(|e| {
+            BlockchainError::Network(format!("Failed to read bootstrap config: {}", e))
+        })?;
 
         // Parse TOML
-        let bootstrap_config: BootstrapConfig = toml::from_str(&config_content)
-            .map_err(|e| BlockchainError::Network(format!("Failed to parse bootstrap config: {}", e)))?;
+        let bootstrap_config: BootstrapConfig = toml::from_str(&config_content).map_err(|e| {
+            BlockchainError::Network(format!("Failed to parse bootstrap config: {}", e))
+        })?;
 
         let mut bootstrap_peers = Vec::new();
 
@@ -722,12 +897,16 @@ impl P2PNetwork {
             bootstrap_peers.extend(bootstrap_config.bootstrap.testnet_nodes);
         }
         // Fall back to development nodes if configured to use them
-        else if bootstrap_config.config.use_development_nodes && !bootstrap_config.bootstrap.development_nodes.is_empty() {
+        else if bootstrap_config.config.use_development_nodes
+            && !bootstrap_config.bootstrap.development_nodes.is_empty()
+        {
             bootstrap_peers.extend(bootstrap_config.bootstrap.development_nodes);
         }
 
         if bootstrap_peers.is_empty() {
-            return Err(BlockchainError::Network("No bootstrap nodes configured".to_string()));
+            return Err(BlockchainError::Network(
+                "No bootstrap nodes configured".to_string(),
+            ));
         }
 
         Ok(bootstrap_peers)
@@ -738,7 +917,10 @@ impl P2PNetwork {
         // Parse bootstrap address in format: /ip4/IP/tcp/PORT/p2p/PEER_ID
         let parts: Vec<&str> = addr_str.split('/').collect();
         if parts.len() < 8 || parts[1] != "ip4" || parts[3] != "tcp" {
-            return Err(BlockchainError::Network(format!("Invalid bootstrap address format: {}", addr_str)));
+            return Err(BlockchainError::Network(format!(
+                "Invalid bootstrap address format: {}",
+                addr_str
+            )));
         }
 
         let ip = parts[2];
@@ -747,9 +929,11 @@ impl P2PNetwork {
 
         // Parse IP, port, and create socket address
         use std::net::{IpAddr, SocketAddr};
-        let ip_addr: IpAddr = ip.parse()
+        let ip_addr: IpAddr = ip
+            .parse()
             .map_err(|_| BlockchainError::Network("Invalid IP address".to_string()))?;
-        let port: u16 = port_str.parse()
+        let port: u16 = port_str
+            .parse()
             .map_err(|_| BlockchainError::Network("Invalid port".to_string()))?;
 
         let socket_addr = SocketAddr::new(ip_addr, port);
@@ -781,6 +965,128 @@ impl P2PNetwork {
         log::info!("Removed peer {} from network", peer_id);
         Ok(())
     }
+
+    fn determine_advertised_socket(&self) -> Result<Option<SocketAddr>> {
+        if self.config.listen_address.trim().is_empty() {
+            return Ok(None);
+        }
+
+        let Some(listen_socket) = parse_listen_address(&self.config.listen_address) else {
+            log::warn!(
+                "Failed to parse listen address '{}' for opportunistic discovery",
+                self.config.listen_address
+            );
+            return Ok(None);
+        };
+
+        if listen_socket.port() == 0 {
+            log::warn!(
+                "Listen address '{}' uses port 0; unable to advertise",
+                self.config.listen_address
+            );
+            return Ok(None);
+        }
+
+        let prefer_ipv4 = listen_socket.is_ipv4();
+        let ip = if listen_socket.ip().is_unspecified() {
+            match resolve_local_ip(prefer_ipv4) {
+                Some(ip) => ip,
+                None => {
+                    log::warn!("Could not determine a suitable local IP address to advertise");
+                    return Ok(None);
+                }
+            }
+        } else {
+            listen_socket.ip()
+        };
+
+        Ok(Some(SocketAddr::new(ip, listen_socket.port())))
+    }
+}
+
+fn parse_listen_address(address: &str) -> Option<SocketAddr> {
+    if address.trim().is_empty() {
+        return None;
+    }
+
+    if let Ok(multiaddr) = address.parse::<Multiaddr>() {
+        let mut ip: Option<IpAddr> = None;
+        let mut port: Option<u16> = None;
+
+        for proto in multiaddr.iter() {
+            match proto {
+                Protocol::Ip4(v4) => ip = Some(IpAddr::V4(v4)),
+                Protocol::Ip6(v6) => ip = Some(IpAddr::V6(v6)),
+                Protocol::Tcp(p) => port = Some(p),
+                _ => {}
+            }
+        }
+
+        if let (Some(ip), Some(port)) = (ip, port) {
+            return Some(SocketAddr::new(ip, port));
+        }
+    }
+
+    address.parse().ok()
+}
+
+fn resolve_local_ip(prefer_ipv4: bool) -> Option<IpAddr> {
+    // Prefer non-loopback addresses first
+    let mut fallback_loopback: Option<IpAddr> = None;
+
+    if let Ok(interfaces) = list_afinet_netifas() {
+        for (_, ip) in interfaces {
+            match ip {
+                IpAddr::V4(v4) => {
+                    if prefer_ipv4 && !v4.is_unspecified() {
+                        if !v4.is_loopback() {
+                            return Some(IpAddr::V4(v4));
+                        }
+                        if fallback_loopback.is_none() {
+                            fallback_loopback = Some(IpAddr::V4(v4));
+                        }
+                    }
+                }
+                IpAddr::V6(v6) => {
+                    if !prefer_ipv4 && !v6.is_unspecified() {
+                        if !v6.is_loopback() {
+                            return Some(IpAddr::V6(v6));
+                        }
+                        if fallback_loopback.is_none() {
+                            fallback_loopback = Some(IpAddr::V6(v6));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(ip) = local_ip() {
+        match ip {
+            IpAddr::V4(v4) => {
+                if prefer_ipv4 {
+                    if !v4.is_loopback() && !v4.is_unspecified() {
+                        return Some(IpAddr::V4(v4));
+                    }
+                    if fallback_loopback.is_none() {
+                        fallback_loopback = Some(IpAddr::V4(v4));
+                    }
+                }
+            }
+            IpAddr::V6(v6) => {
+                if !prefer_ipv4 {
+                    if !v6.is_loopback() && !v6.is_unspecified() {
+                        return Some(IpAddr::V6(v6));
+                    }
+                    if fallback_loopback.is_none() {
+                        fallback_loopback = Some(IpAddr::V6(v6));
+                    }
+                }
+            }
+        }
+    }
+
+    fallback_loopback
 }
 
 /// Network statistics
@@ -808,7 +1114,9 @@ mod tests {
     async fn test_p2p_network_creation() {
         let temp_dir = TempDir::new().unwrap();
         let blockchain = Arc::new(RwLock::new(
-            PersistentBlockchain::new(temp_dir.path().to_str().unwrap()).await.unwrap()
+            PersistentBlockchain::new(temp_dir.path().to_str().unwrap())
+                .await
+                .unwrap(),
         ));
 
         let config = P2PConfig::default();

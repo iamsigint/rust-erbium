@@ -22,7 +22,13 @@ impl RemediationEngine {
         Self
     }
 
-    pub async fn generate_plan(&self, _framework_results: &std::collections::HashMap<super::frameworks::ComplianceFramework, super::FrameworkCheckResult>) -> Result<RemediationPlan> {
+    pub async fn generate_plan(
+        &self,
+        _framework_results: &std::collections::HashMap<
+            super::frameworks::ComplianceFramework,
+            super::FrameworkCheckResult,
+        >,
+    ) -> Result<RemediationPlan> {
         Ok(RemediationPlan)
     }
 

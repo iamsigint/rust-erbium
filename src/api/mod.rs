@@ -1,7 +1,7 @@
-pub mod rpc;
-pub mod rest;
-pub mod websocket;
 pub mod graphql;
+pub mod rest;
+pub mod rpc;
+pub mod websocket;
 
 use crate::utils::error::Result;
 use serde::{Deserialize, Serialize};
@@ -53,44 +53,54 @@ pub struct ApiServer {
 
 impl ApiServer {
     pub fn new(config: ApiConfig) -> Result<Self> {
-        Ok(Self {
-            config,
-        })
+        Ok(Self { config })
     }
-    
+
     pub async fn start(&mut self) -> Result<()> {
         log::info!("Starting API servers...");
-        
+
         if self.config.rpc_enabled {
             let cfg = crate::node::config::NodeConfig::default();
             let _rpc_server = rpc::RpcServer::new(self.config.rpc_port, cfg)?;
             // Note: RpcServer::start is async but we're not awaiting it properly here
             // In real implementation, you'd spawn tasks for each server
-            log::info!("JSON-RPC server configured for port {}", self.config.rpc_port);
+            log::info!(
+                "JSON-RPC server configured for port {}",
+                self.config.rpc_port
+            );
         }
-        
+
         if self.config.rest_enabled {
-            log::info!("REST API server configured for port {}", self.config.rest_port);
+            log::info!(
+                "REST API server configured for port {}",
+                self.config.rest_port
+            );
         }
-        
+
         if self.config.websocket_enabled {
-            log::info!("WebSocket server configured for port {}", self.config.websocket_port);
+            log::info!(
+                "WebSocket server configured for port {}",
+                self.config.websocket_port
+            );
         }
-        
+
         if self.config.graphql_enabled {
-            log::info!("GraphQL server configured for port {}", self.config.graphql_port);
+            log::info!(
+                "GraphQL server configured for port {}",
+                self.config.graphql_port
+            );
         }
-        
+
         log::info!("API servers configured successfully (implementation pending)");
         Ok(())
     }
-    
+
     pub async fn stop(&mut self) -> Result<()> {
         log::info!("Stopping API servers...");
         log::info!("All API servers stopped");
         Ok(())
     }
-    
+
     pub fn get_node_info(&self) -> NodeInfo {
         NodeInfo {
             version: "0.1.0".to_string(),

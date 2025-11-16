@@ -1,8 +1,8 @@
 //! ERC20 token contract implementation
 
 use crate::core::types::Address;
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// ERC20 token contract
@@ -19,7 +19,13 @@ pub struct ERC20Contract {
 
 impl ERC20Contract {
     /// Create a new ERC20 contract
-    pub fn new(name: String, symbol: String, decimals: u8, initial_supply: u64, owner: Address) -> Self {
+    pub fn new(
+        name: String,
+        symbol: String,
+        decimals: u8,
+        initial_supply: u64,
+        owner: Address,
+    ) -> Self {
         let mut balances = HashMap::new();
         balances.insert(owner.clone(), initial_supply);
 
@@ -50,8 +56,18 @@ impl ERC20Contract {
     }
 
     /// Transfer tokens from one address to another using allowance
-    pub fn transfer_from(&mut self, spender: &Address, from: &Address, to: &Address, amount: u64) -> Result<()> {
-        let allowance = self.allowances.get(&(from.clone(), spender.clone())).copied().unwrap_or(0);
+    pub fn transfer_from(
+        &mut self,
+        spender: &Address,
+        from: &Address,
+        to: &Address,
+        amount: u64,
+    ) -> Result<()> {
+        let allowance = self
+            .allowances
+            .get(&(from.clone(), spender.clone()))
+            .copied()
+            .unwrap_or(0);
 
         if allowance < amount {
             return Err(BlockchainError::VM("Insufficient allowance".to_string()));
@@ -61,14 +77,18 @@ impl ERC20Contract {
         self.transfer(from, to, amount)?;
 
         // Update allowance
-        *self.allowances.entry((from.clone(), spender.clone())).or_insert(0) = allowance - amount;
+        *self
+            .allowances
+            .entry((from.clone(), spender.clone()))
+            .or_insert(0) = allowance - amount;
 
         Ok(())
     }
 
     /// Approve spender to spend tokens on behalf of owner
     pub fn approve(&mut self, owner: &Address, spender: &Address, amount: u64) -> Result<()> {
-        self.allowances.insert((owner.clone(), spender.clone()), amount);
+        self.allowances
+            .insert((owner.clone(), spender.clone()), amount);
         Ok(())
     }
 
@@ -79,7 +99,10 @@ impl ERC20Contract {
 
     /// Get allowance for spender to spend owner's tokens
     pub fn allowance(&self, owner: &Address, spender: &Address) -> u64 {
-        self.allowances.get(&(owner.clone(), spender.clone())).copied().unwrap_or(0)
+        self.allowances
+            .get(&(owner.clone(), spender.clone()))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Mint new tokens (only owner)
@@ -99,7 +122,9 @@ impl ERC20Contract {
         let balance = self.balances.get(from).copied().unwrap_or(0);
 
         if balance < amount {
-            return Err(BlockchainError::VM("Insufficient balance to burn".to_string()));
+            return Err(BlockchainError::VM(
+                "Insufficient balance to burn".to_string(),
+            ));
         }
 
         *self.balances.entry(from.clone()).or_insert(0) = balance - amount;
@@ -213,7 +238,9 @@ mod tests {
         assert_eq!(contract.allowance(&owner, &spender), 500);
 
         // Transfer from owner to recipient using spender's allowance
-        contract.transfer_from(&spender, &owner, &recipient, 300).unwrap();
+        contract
+            .transfer_from(&spender, &owner, &recipient, 300)
+            .unwrap();
 
         assert_eq!(contract.balance_of(&owner), 700);
         assert_eq!(contract.balance_of(&recipient), 300);

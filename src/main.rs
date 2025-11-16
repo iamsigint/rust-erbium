@@ -1,6 +1,6 @@
+use clap::Parser;
 use erbium_blockchain::node::manager::NodeManager;
 use erbium_blockchain::utils::logger;
-use clap::Parser;
 use tokio::signal;
 
 #[derive(Parser)]
@@ -23,7 +23,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    log::info!("Starting Erbium Blockchain Node v{}", env!("CARGO_PKG_VERSION"));
+    log::info!(
+        "Starting Erbium Blockchain Node v{}",
+        env!("CARGO_PKG_VERSION")
+    );
     log::info!("Data directory: {}", args.data_dir);
 
     // Create and start the node manager
@@ -36,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     match node_manager.start().await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             log::error!("Failed to start node: {}", e);
             return Ok(());
@@ -55,8 +58,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Gracefully stop the node
     match node_manager.stop().await {
-        Ok(_) => {},
-        Err(e) => log::error!("Error stopping node: {}", e)
+        Ok(_) => {}
+        Err(e) => log::error!("Error stopping node: {}", e),
     };
 
     log::info!("Erbium Node stopped successfully");

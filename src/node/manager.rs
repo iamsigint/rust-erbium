@@ -1,9 +1,9 @@
-use crate::utils::error::{Result, BlockchainError};
 use crate::bridges::core::bridge_manager::BridgeManager;
-use crate::node::node_metrics::NodeMetrics;
-use crate::network::p2p_network::{P2PNetwork, P2PConfig};
-use crate::core::erbium_engine::ErbiumEngine;
 use crate::core::chain::PersistentBlockchain;
+use crate::core::erbium_engine::ErbiumEngine;
+use crate::network::p2p_network::{P2PConfig, P2PNetwork};
+use crate::node::node_metrics::NodeMetrics;
+use crate::utils::error::{BlockchainError, Result};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -31,7 +31,10 @@ impl NodeManager {
         let blockchain = match PersistentBlockchain::new("./erbium-data").await {
             Ok(bc) => Some(Arc::new(RwLock::new(bc))),
             Err(e) => {
-                log::warn!("Failed to initialize persistent blockchain: {}. Blockchain not available", e);
+                log::warn!(
+                    "Failed to initialize persistent blockchain: {}. Blockchain not available",
+                    e
+                );
                 None
             }
         };
@@ -52,7 +55,10 @@ impl NodeManager {
         // Initialize P2P Network (requires blockchain)
         let p2p_network = if let Some(blockchain_ref) = &blockchain {
             let p2p_config = P2PConfig::default();
-            Some(Arc::new(RwLock::new(P2PNetwork::new(p2p_config, blockchain_ref.clone()))))
+            Some(Arc::new(RwLock::new(P2PNetwork::new(
+                p2p_config,
+                blockchain_ref.clone(),
+            ))))
         } else {
             log::warn!("Blockchain not available, P2P network not initialized");
             None
@@ -86,10 +92,12 @@ impl NodeManager {
             shutdown_sender: None,
         })
     }
-    
+
     pub async fn start(&mut self) -> Result<()> {
         if self.is_running {
-            return Err(BlockchainError::Network("Node is already running".to_string()));
+            return Err(BlockchainError::Network(
+                "Node is already running".to_string(),
+            ));
         }
 
         self.is_running = true;
@@ -113,7 +121,7 @@ impl NodeManager {
         log::info!("Erbium Node started successfully");
         Ok(())
     }
-    
+
     async fn start_rest_api(&mut self) -> Result<()> {
         use crate::api::rest::RestServer;
 
@@ -142,20 +150,20 @@ impl NodeManager {
         self.rest_server_handle = Some(handle);
         Ok(())
     }
-    
+
     async fn start_rpc_api(&mut self) -> Result<()> {
         // TODO: Implement RPC API with PersistentBlockchain support
         log::warn!("RPC API not yet implemented for PersistentBlockchain");
         Ok(())
     }
-    
+
     async fn start_block_production(&mut self) -> Result<()> {
         let _blockchain = self.blockchain.as_ref().unwrap().clone();
         let consensus = self.consensus.as_ref().unwrap().clone();
-        
+
         let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
-            
+
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
@@ -171,27 +179,27 @@ impl NodeManager {
                 }
             }
         });
-        
+
         self.block_production_handle = Some(handle);
         Ok(())
     }
-    
+
     pub async fn stop(&mut self) -> Result<()> {
         if !self.is_running {
             return Err(BlockchainError::Network("Node is not running".to_string()));
         }
-        
+
         log::info!("Stopping Erbium Node...");
         self.is_running = false;
-        
+
         // Send shutdown signal to RPC server first
         if let Some(shutdown_tx) = self.shutdown_sender.take() {
             let _ = shutdown_tx.send(());
         }
-        
+
         // Give a moment for graceful shutdown
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        
+
         // Abort all running tasks with timeout
         let stop_futures = vec![
             ("REST API", self.rest_server_handle.take()),
@@ -200,32 +208,29 @@ impl NodeManager {
             ("Bridge monitoring", self.bridge_monitor_handle.take()),
             ("P2P Network", self.network_handle.take()),
         ];
-        
+
         for (name, handle_opt) in stop_futures {
             if let Some(handle) = handle_opt {
                 handle.abort();
-                match tokio::time::timeout(
-                    tokio::time::Duration::from_secs(2),
-                    handle
-                ).await {
+                match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
                     Ok(_) => log::debug!("{} stopped gracefully", name),
                     Err(_) => log::warn!("{} forced to stop after timeout", name),
                 }
             }
         }
-        
+
         log::info!("All node services stopped successfully");
         Ok(())
     }
-    
+
     pub fn is_running(&self) -> bool {
         self.is_running
     }
-    
+
     pub fn has_blockchain(&self) -> bool {
         self.blockchain.is_some()
     }
-    
+
     pub fn has_consensus(&self) -> bool {
         self.consensus.is_some()
     }
@@ -245,13 +250,17 @@ impl NodeManager {
     pub fn get_erbium_engine(&self) -> Option<&ErbiumEngine> {
         self.erbium_engine.as_ref().map(|v| v.as_ref())
     }
-    
+
     async fn start_metrics_server(&mut self) -> Result<()> {
         if let Some(metrics) = &self.metrics {
             // SECURITY: No localhost defaults - requires explicit configuration
-            if let Err(e) = metrics.start_server("0.0.0.0:0") { // Bind to all interfaces, random port
+            if let Err(e) = metrics.start_server("0.0.0.0:0") {
+                // Bind to all interfaces, random port
                 log::warn!("Failed to start metrics server: {}", e);
-                return Err(BlockchainError::Other(format!("Failed to start metrics server: {}", e)));
+                return Err(BlockchainError::Other(format!(
+                    "Failed to start metrics server: {}",
+                    e
+                )));
             }
             log::info!("Metrics server started on 0.0.0.0:0 (random port - configure explicitly in production)");
         } else {

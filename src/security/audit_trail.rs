@@ -4,8 +4,8 @@
 //! including automated security checks, compliance monitoring, and
 //! external audit integration.
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -137,7 +137,10 @@ impl SecurityAuditor {
     }
 
     /// Perform comprehensive security audit
-    pub async fn perform_comprehensive_audit(&mut self, target_system: &str) -> Result<SecurityAuditResult> {
+    pub async fn perform_comprehensive_audit(
+        &mut self,
+        target_system: &str,
+    ) -> Result<SecurityAuditResult> {
         let audit_id = format!("audit_{}", current_timestamp());
         let mut findings = Vec::new();
 
@@ -182,7 +185,8 @@ impl SecurityAuditor {
         findings.push(SecurityFinding {
             id: "crypto_001".to_string(),
             title: "Cryptographic Algorithm Strength".to_string(),
-            description: "Verified use of post-quantum cryptography (Dilithium) and AES-256-GCM".to_string(),
+            description: "Verified use of post-quantum cryptography (Dilithium) and AES-256-GCM"
+                .to_string(),
             severity: Severity::Info,
             category: SecurityCategory::Cryptography,
             affected_components: vec!["crypto".to_string()],
@@ -309,8 +313,14 @@ impl SecurityAuditor {
 
     /// Calculate overall risk level from findings
     fn calculate_overall_risk(&self, findings: &[SecurityFinding]) -> RiskLevel {
-        let critical_count = findings.iter().filter(|f| f.severity == Severity::Critical).count();
-        let high_count = findings.iter().filter(|f| f.severity == Severity::High).count();
+        let critical_count = findings
+            .iter()
+            .filter(|f| f.severity == Severity::Critical)
+            .count();
+        let high_count = findings
+            .iter()
+            .filter(|f| f.severity == Severity::High)
+            .count();
 
         if critical_count > 0 {
             RiskLevel::Critical
@@ -386,19 +396,18 @@ impl SecurityAuditor {
                 "Use AES-256-GCM for encryption".to_string(),
                 "Implement proper key management".to_string(),
             ],
-            checks: vec![
-                SecurityCheck {
-                    id: "crypto_check_1".to_string(),
-                    name: "Algorithm Strength Check".to_string(),
-                    description: "Verify use of approved cryptographic algorithms".to_string(),
-                    category: SecurityCategory::Cryptography,
-                    automated: true,
-                    frequency: CheckFrequency::Weekly,
-                },
-            ],
+            checks: vec![SecurityCheck {
+                id: "crypto_check_1".to_string(),
+                name: "Algorithm Strength Check".to_string(),
+                description: "Verify use of approved cryptographic algorithms".to_string(),
+                category: SecurityCategory::Cryptography,
+                automated: true,
+                frequency: CheckFrequency::Weekly,
+            }],
         };
 
-        self.security_policies.insert("crypto_policy".to_string(), crypto_policy);
+        self.security_policies
+            .insert("crypto_policy".to_string(), crypto_policy);
     }
 
     /// Initialize compliance frameworks
@@ -407,14 +416,15 @@ impl SecurityAuditor {
             name: "GDPR".to_string(),
             version: "2018".to_string(),
             standards: vec!["EU GDPR".to_string()],
-            requirements: vec![
-                ComplianceRequirement {
-                    id: "gdpr_001".to_string(),
-                    description: "Data encryption and protection".to_string(),
-                    mandatory: true,
-                    controls: vec!["encryption_at_rest".to_string(), "access_controls".to_string()],
-                },
-            ],
+            requirements: vec![ComplianceRequirement {
+                id: "gdpr_001".to_string(),
+                description: "Data encryption and protection".to_string(),
+                mandatory: true,
+                controls: vec![
+                    "encryption_at_rest".to_string(),
+                    "access_controls".to_string(),
+                ],
+            }],
         };
 
         self.compliance_frameworks.push(gdpr);
@@ -433,10 +443,14 @@ impl SecurityAuditor {
     /// Export audit results to JSON
     pub fn export_audit_results(&self, audit_id: &str) -> Result<String> {
         if let Some(audit) = self.audit_history.iter().find(|a| a.audit_id == audit_id) {
-            serde_json::to_string_pretty(audit)
-                .map_err(|e| BlockchainError::Serialization(format!("Failed to serialize audit: {}", e)))
+            serde_json::to_string_pretty(audit).map_err(|e| {
+                BlockchainError::Serialization(format!("Failed to serialize audit: {}", e))
+            })
         } else {
-            Err(BlockchainError::Validator(format!("Audit {} not found", audit_id)))
+            Err(BlockchainError::Validator(format!(
+                "Audit {} not found",
+                audit_id
+            )))
         }
     }
 }
@@ -462,7 +476,10 @@ mod tests {
     #[tokio::test]
     async fn test_comprehensive_audit() {
         let mut auditor = SecurityAuditor::new();
-        let result = auditor.perform_comprehensive_audit("test_system").await.unwrap();
+        let result = auditor
+            .perform_comprehensive_audit("test_system")
+            .await
+            .unwrap();
 
         assert!(!result.audit_id.is_empty());
         assert!(!result.findings.is_empty());
@@ -475,8 +492,14 @@ mod tests {
         let mut auditor = SecurityAuditor::new();
 
         // Perform two audits
-        auditor.perform_comprehensive_audit("system1").await.unwrap();
-        auditor.perform_comprehensive_audit("system2").await.unwrap();
+        auditor
+            .perform_comprehensive_audit("system1")
+            .await
+            .unwrap();
+        auditor
+            .perform_comprehensive_audit("system2")
+            .await
+            .unwrap();
 
         let history = auditor.get_audit_history();
         assert_eq!(history.len(), 2);

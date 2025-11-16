@@ -1,9 +1,11 @@
 // src/governance/dao.rs
 
+use super::{
+    GovernanceConfig, ProposalAction, ProposalManager, ProposalStatus, Treasury, VotingSystem,
+};
 use crate::core::types::Address;
-use crate::utils::error::{Result, BlockchainError};
-use crate::vm::contracts::{ERC20Contract, DAOContract};
-use super::{VotingSystem, Treasury, ProposalManager, ProposalAction, GovernanceConfig, ProposalStatus};
+use crate::utils::error::{BlockchainError, Result};
+use crate::vm::contracts::{DAOContract, ERC20Contract};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -65,8 +67,8 @@ impl DAO {
             name.clone(),
             format!("DAO governance for {}", name),
             Some(dao_address.clone()), // governance token
-            20, // quorum percentage
-            100, // voting period in blocks
+            20,                        // quorum percentage
+            100,                       // voting period in blocks
             founder,
             0, // current block
         );
@@ -106,13 +108,21 @@ impl DAO {
             )));
         }
 
-        let proposal_id = self.proposal_manager.create_proposal(creator, title.clone(), description.clone(), actions)?;
-        let _gov_proposal_id = self.governance.create_proposal(
+        let proposal_id = self.proposal_manager.create_proposal(
             creator,
-            format!("{}: {}", title, description),
-            crate::vm::dao::ProposalType::General,
-            0, // current block
-        ).unwrap_or(0);
+            title.clone(),
+            description.clone(),
+            actions,
+        )?;
+        let _gov_proposal_id = self
+            .governance
+            .create_proposal(
+                creator,
+                format!("{}: {}", title, description),
+                crate::vm::dao::ProposalType::General,
+                0, // current block
+            )
+            .unwrap_or(0);
         self.voting_system.initialize_voting_session(proposal_id)?;
 
         Ok(proposal_id)
@@ -127,24 +137,33 @@ impl DAO {
         let voting_power = self.get_member_voting_power(voter)?;
 
         if voting_power == 0 {
-            return Err(BlockchainError::Governance("Voter has no voting power".to_string()));
+            return Err(BlockchainError::Governance(
+                "Voter has no voting power".to_string(),
+            ));
         }
 
         self.governance.vote(voter, proposal_id, support, 0)?;
 
         // Record the vote in our voting system
-        self.voting_system.record_vote(proposal_id, voter, support, voting_power)?;
+        self.voting_system
+            .record_vote(proposal_id, voter, support, voting_power)?;
 
         Ok(true)
     }
 
     pub fn execute_proposal(&mut self, proposal_id: u64, _executor: &Address) -> Result<bool> {
-        let status = self.get_proposal_status(proposal_id)?
+        let status = self
+            .get_proposal_status(proposal_id)?
             .ok_or_else(|| BlockchainError::Governance("Proposal not found".to_string()))?;
 
         match status {
-            ProposalStatus::Succeeded | ProposalStatus::Active => { /* continue */ },
-            _ => return Err(BlockchainError::Governance(format!("Proposal cannot be executed in state: {:?}", status))),
+            ProposalStatus::Succeeded | ProposalStatus::Active => { /* continue */ }
+            _ => {
+                return Err(BlockchainError::Governance(format!(
+                    "Proposal cannot be executed in state: {:?}",
+                    status
+                )))
+            }
         }
 
         self.governance.execute_proposal(proposal_id, 0)?;
@@ -156,13 +175,23 @@ impl DAO {
         Ok(true)
     }
 
-    pub fn _internal_add_member(&mut self, new_member_addr: Address, initial_tokens: u64) -> Result<()> {
+    pub fn _internal_add_member(
+        &mut self,
+        new_member_addr: Address,
+        initial_tokens: u64,
+    ) -> Result<()> {
         if self.members.contains_key(&new_member_addr) {
-            return Err(BlockchainError::Governance("Member already exists".to_string()));
+            return Err(BlockchainError::Governance(
+                "Member already exists".to_string(),
+            ));
         }
 
         // Mock treasury transfer - not implemented
-        log::info!("Mock treasury transfer: {} tokens to {}", initial_tokens, new_member_addr);
+        log::info!(
+            "Mock treasury transfer: {} tokens to {}",
+            initial_tokens,
+            new_member_addr
+        );
 
         let member = Member {
             address: new_member_addr.clone(),
@@ -227,7 +256,11 @@ impl DAO {
     fn execute_proposal_actions(&mut self, proposal_id: u64) -> Result<()> {
         if let Some(actions) = self.proposal_manager.get_proposal_actions(proposal_id)? {
             for action in actions {
-                log::info!("Executing action for proposal {}: {:?}", proposal_id, action);
+                log::info!(
+                    "Executing action for proposal {}: {:?}",
+                    proposal_id,
+                    action
+                );
                 match action {
                     ProposalAction::TransferFunds { to, amount } => {
                         // Mock treasury transfer
@@ -240,7 +273,10 @@ impl DAO {
                         self._internal_add_member(address, tokens)?;
                     }
                     ProposalAction::UpgradeContract { new_code: _ } => {
-                        log::warn!("Proposal {}: Contract upgrade action not implemented", proposal_id);
+                        log::warn!(
+                            "Proposal {}: Contract upgrade action not implemented",
+                            proposal_id
+                        );
                     }
                 }
             }
@@ -254,31 +290,56 @@ impl DAO {
     fn update_governance_parameter(&mut self, key: &str, value_str: String) -> Result<()> {
         match key {
             "voting_delay" => {
-                let value: u64 = value_str.parse()
-                    .map_err(|e| BlockchainError::Governance(format!("Invalid voting delay value '{}': {}", value_str, e)))?;
+                let value: u64 = value_str.parse().map_err(|e| {
+                    BlockchainError::Governance(format!(
+                        "Invalid voting delay value '{}': {}",
+                        value_str, e
+                    ))
+                })?;
                 self.config.voting_delay = value;
             }
             "voting_period" => {
-                let value: u64 = value_str.parse()
-                    .map_err(|e| BlockchainError::Governance(format!("Invalid voting period value '{}': {}", value_str, e)))?;
+                let value: u64 = value_str.parse().map_err(|e| {
+                    BlockchainError::Governance(format!(
+                        "Invalid voting period value '{}': {}",
+                        value_str, e
+                    ))
+                })?;
                 self.config.voting_period = value;
             }
             "proposal_threshold" => {
-                let value: u64 = value_str.parse()
-                    .map_err(|e| BlockchainError::Governance(format!("Invalid proposal threshold value '{}': {}", value_str, e)))?;
+                let value: u64 = value_str.parse().map_err(|e| {
+                    BlockchainError::Governance(format!(
+                        "Invalid proposal threshold value '{}': {}",
+                        value_str, e
+                    ))
+                })?;
                 self.config.proposal_threshold = value;
             }
             "quorum_votes" => {
-                let value: u64 = value_str.parse()
-                    .map_err(|e| BlockchainError::Governance(format!("Invalid quorum votes value '{}': {}", value_str, e)))?;
+                let value: u64 = value_str.parse().map_err(|e| {
+                    BlockchainError::Governance(format!(
+                        "Invalid quorum votes value '{}': {}",
+                        value_str, e
+                    ))
+                })?;
                 self.config.quorum_votes = value;
             }
             "timelock_delay" => {
-                let value: u64 = value_str.parse()
-                    .map_err(|e| BlockchainError::Governance(format!("Invalid timelock delay value '{}': {}", value_str, e)))?;
+                let value: u64 = value_str.parse().map_err(|e| {
+                    BlockchainError::Governance(format!(
+                        "Invalid timelock delay value '{}': {}",
+                        value_str, e
+                    ))
+                })?;
                 self.config.timelock_delay = value;
             }
-            _ => return Err(BlockchainError::Governance(format!("Unknown governance parameter key: {}", key))),
+            _ => {
+                return Err(BlockchainError::Governance(format!(
+                    "Unknown governance parameter key: {}",
+                    key
+                )))
+            }
         }
         log::info!("Updated governance parameter '{}' to '{}'", key, value_str);
         Ok(())

@@ -91,6 +91,7 @@ libp2p = { version = "0.53", features = [
     "noise",
     "yamux",
 ] }
+local-ip-address = "0.6"
 bitcoin = "0.32.7"
 bitcoincore-rpc = "0.19.0"
 web3 = "0.19.0"

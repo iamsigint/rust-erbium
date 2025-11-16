@@ -1,18 +1,18 @@
 //! Transaction Template System (Q1 2025 Implementation)
 //! Inspired by PSBT but innovated for Erbium's multi-layer architecture
 
-use crate::core::{Address, Hash, Result, BlockchainError};
+use crate::core::{Address, BlockchainError, Hash, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Transaction Template State
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TemplateState {
-    Draft,      // Initial proposal
-    Reviewing,  // Stakeholders reviewing
-    Approved,   // Template approved
-    Executing,  // Being executed
-    Complete,   // Transaction completed
+    Draft,     // Initial proposal
+    Reviewing, // Stakeholders reviewing
+    Approved,  // Template approved
+    Executing, // Being executed
+    Complete,  // Transaction completed
 }
 
 /// Erbium Transaction Template (PSBT-inspired but innovative)
@@ -256,9 +256,16 @@ impl TransactionTemplate {
     }
 
     /// Approve template
-    pub fn approve(&mut self, approver: Address, signature: Vec<u8>, comments: Option<String>) -> Result<()> {
+    pub fn approve(
+        &mut self,
+        approver: Address,
+        signature: Vec<u8>,
+        comments: Option<String>,
+    ) -> Result<()> {
         // Check if approver is authorized
-        let participant = self.required_participants.iter()
+        let participant = self
+            .required_participants
+            .iter()
             .find(|p| p.address == approver && p.permissions.contains(&Permission::CanApprove))
             .ok_or_else(|| BlockchainError::Validator("Unauthorized approver".to_string()))?;
 
@@ -287,10 +294,14 @@ impl TransactionTemplate {
     /// Execute approved template
     pub fn execute(&mut self, executor: Address) -> Result<()> {
         if self.state != TemplateState::Approved {
-            return Err(BlockchainError::Validator("Template not approved".to_string()));
+            return Err(BlockchainError::Validator(
+                "Template not approved".to_string(),
+            ));
         }
 
-        let _participant = self.required_participants.iter()
+        let _participant = self
+            .required_participants
+            .iter()
             .find(|p| p.address == executor && p.permissions.contains(&Permission::CanExecute))
             .ok_or_else(|| BlockchainError::Validator("Unauthorized executor".to_string()))?;
 
@@ -302,7 +313,9 @@ impl TransactionTemplate {
     /// Complete template execution
     pub fn complete(&mut self) -> Result<()> {
         if self.state != TemplateState::Executing {
-            return Err(BlockchainError::Validator("Template not executing".to_string()));
+            return Err(BlockchainError::Validator(
+                "Template not executing".to_string(),
+            ));
         }
 
         self.state = TemplateState::Complete;
@@ -433,13 +446,21 @@ impl TemplateManager {
     }
 
     /// Create new template
-    pub fn create_template(&mut self, title: String, description: String, proposer: TemplateParticipant) -> Hash {
+    pub fn create_template(
+        &mut self,
+        title: String,
+        description: String,
+        proposer: TemplateParticipant,
+    ) -> Hash {
         let template = TransactionTemplate::new(title, description, proposer.clone());
         let id = template.id;
 
         let proposer_address = proposer.address.clone();
         self.templates.insert(id, template);
-        self.template_index.entry(proposer_address).or_insert(Vec::new()).push(id);
+        self.template_index
+            .entry(proposer_address)
+            .or_insert(Vec::new())
+            .push(id);
 
         id
     }
@@ -451,7 +472,8 @@ impl TemplateManager {
 
     /// Get templates by address
     pub fn get_templates_by_address(&self, address: &Address) -> Vec<&TransactionTemplate> {
-        self.template_index.get(address)
+        self.template_index
+            .get(address)
             .unwrap_or(&Vec::new())
             .iter()
             .filter_map(|id| self.templates.get(id))
@@ -459,8 +481,16 @@ impl TemplateManager {
     }
 
     /// Approve template
-    pub fn approve_template(&mut self, template_id: &Hash, approver: Address, signature: Vec<u8>, comments: Option<String>) -> Result<()> {
-        let template = self.templates.get_mut(template_id)
+    pub fn approve_template(
+        &mut self,
+        template_id: &Hash,
+        approver: Address,
+        signature: Vec<u8>,
+        comments: Option<String>,
+    ) -> Result<()> {
+        let template = self
+            .templates
+            .get_mut(template_id)
             .ok_or_else(|| BlockchainError::Validator("Template not found".to_string()))?;
 
         template.approve(approver, signature, comments)
@@ -468,7 +498,9 @@ impl TemplateManager {
 
     /// Execute template
     pub fn execute_template(&mut self, template_id: &Hash, executor: Address) -> Result<()> {
-        let template = self.templates.get_mut(template_id)
+        let template = self
+            .templates
+            .get_mut(template_id)
             .ok_or_else(|| BlockchainError::Validator("Template not found".to_string()))?;
 
         template.execute(executor)
@@ -476,7 +508,9 @@ impl TemplateManager {
 
     /// Complete template
     pub fn complete_template(&mut self, template_id: &Hash) -> Result<()> {
-        let template = self.templates.get_mut(template_id)
+        let template = self
+            .templates
+            .get_mut(template_id)
             .ok_or_else(|| BlockchainError::Validator("Template not found".to_string()))?;
 
         template.complete()
@@ -485,7 +519,9 @@ impl TemplateManager {
     /// Clean expired templates
     pub fn clean_expired(&mut self) -> usize {
         let current_time = current_timestamp();
-        let expired_ids: Vec<Hash> = self.templates.iter()
+        let expired_ids: Vec<Hash> = self
+            .templates
+            .iter()
             .filter(|(_, template)| current_time > template.expires_at)
             .map(|(id, _)| *id)
             .collect();
@@ -581,7 +617,9 @@ mod tests {
     #[test]
     fn test_template_creation() {
         let proposer = TemplateParticipant {
-            address: Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string()),
+            address: Address::new_unchecked(
+                "0x0000000000000000000000000000000000000001".to_string(),
+            ),
             role: ParticipantRole::Proposer,
             permissions: vec![Permission::CanEdit, Permission::CanApprove],
             name: "Alice".to_string(),
@@ -600,14 +638,18 @@ mod tests {
     #[test]
     fn test_template_approval_workflow() {
         let proposer = TemplateParticipant {
-            address: Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string()),
+            address: Address::new_unchecked(
+                "0x0000000000000000000000000000000000000001".to_string(),
+            ),
             role: ParticipantRole::Proposer,
             permissions: vec![Permission::CanEdit],
             name: "Alice".to_string(),
         };
 
         let approver = TemplateParticipant {
-            address: Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string()),
+            address: Address::new_unchecked(
+                "0x0000000000000000000000000000000000000002".to_string(),
+            ),
             role: ParticipantRole::Approver,
             permissions: vec![Permission::CanApprove],
             name: "Bob".to_string(),
@@ -623,7 +665,13 @@ mod tests {
         template.metadata.required_approvals = 1;
 
         // Approve template
-        template.approve(approver.address, vec![1, 2, 3], Some("Approved".to_string())).unwrap();
+        template
+            .approve(
+                approver.address,
+                vec![1, 2, 3],
+                Some("Approved".to_string()),
+            )
+            .unwrap();
 
         assert_eq!(template.state, TemplateState::Approved);
         assert_eq!(template.approvals.len(), 1);
@@ -632,7 +680,9 @@ mod tests {
     #[test]
     fn test_template_manager() {
         let proposer = TemplateParticipant {
-            address: Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string()),
+            address: Address::new_unchecked(
+                "0x0000000000000000000000000000000000000001".to_string(),
+            ),
             role: ParticipantRole::Proposer,
             permissions: vec![Permission::CanEdit],
             name: "Alice".to_string(),

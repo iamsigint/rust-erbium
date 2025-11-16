@@ -2,7 +2,7 @@
 //!
 //! This module defines compliance frameworks and their requirements.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Compliance framework types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

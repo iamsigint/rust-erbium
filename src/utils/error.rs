@@ -1,8 +1,8 @@
 // src/utils/error.rs
 
-use thiserror::Error;
-use std::{io, error::Error as StdError};
 use crate::core::types::AddressError;
+use std::{error::Error as StdError, io};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum BlockchainError {

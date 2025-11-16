@@ -1,7 +1,7 @@
 //! Bridge adapter for cross-chain communication
 
 use crate::utils::error::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Bridge adapter for different blockchain networks
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +32,12 @@ impl BridgeAdapter {
     /// Send message to target chain
     pub async fn send_message(&self, _message: &[u8]) -> Result<()> {
         // Mock implementation
-        log::info!("Sending message from {} to {} via {:?}", self.source_chain, self.target_chain, self.adapter_type);
+        log::info!(
+            "Sending message from {} to {} via {:?}",
+            self.source_chain,
+            self.target_chain,
+            self.adapter_type
+        );
         Ok(())
     }
 

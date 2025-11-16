@@ -33,7 +33,7 @@ impl Default for NodeConfig {
             max_peers: 50,
             enable_mining: false,
             log_level: "info".to_string(),
-            chain_id: 0x539, // 1337
+            chain_id: 0x539,              // 1337
             gas_price_wei: 1_000_000_000, // 1 gwei default
             dev_apply_on_send: true,
             asset_name: "Erbium".to_string(),

@@ -6,19 +6,19 @@
 //! - Anomaly detection using statistical methods
 //! - Cluster health scoring and optimization recommendations
 
-pub mod monitoring;
-pub mod predictive;
 pub mod anomaly_detection;
 pub mod health_scoring;
+pub mod monitoring;
+pub mod predictive;
 
 // Re-export main components
-pub use monitoring::{ClusterMonitor, MonitoringConfig, ClusterMetrics};
-pub use predictive::{PredictiveAnalytics, TrendAnalysis, PredictionModel};
-pub use anomaly_detection::{AnomalyDetector, AnomalyConfig, AnomalyAlert};
-pub use health_scoring::{HealthScorer, HealthScore, OptimizationRecommendation};
+pub use anomaly_detection::{AnomalyAlert, AnomalyConfig, AnomalyDetector};
+pub use health_scoring::{HealthScore, HealthScorer, OptimizationRecommendation};
+pub use monitoring::{ClusterMetrics, ClusterMonitor, MonitoringConfig};
+pub use predictive::{PredictionModel, PredictiveAnalytics, TrendAnalysis};
 
 use crate::utils::error::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// Main analytics coordinator
@@ -78,8 +78,12 @@ impl AnalyticsEngine {
     /// Create a new analytics engine
     pub fn new(config: AnalyticsConfig) -> Self {
         let monitor = Arc::new(ClusterMonitor::new(monitoring::MonitoringConfig::default()));
-        let predictor = Arc::new(PredictiveAnalytics::new(predictive::PredictiveConfig::default()));
-        let anomaly_detector = Arc::new(AnomalyDetector::new(anomaly_detection::AnomalyConfig::default()));
+        let predictor = Arc::new(PredictiveAnalytics::new(
+            predictive::PredictiveConfig::default(),
+        ));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(
+            anomaly_detection::AnomalyConfig::default(),
+        ));
         let health_scorer = Arc::new(HealthScorer::new(health_scoring::HealthConfig::default()));
 
         Self {
@@ -109,10 +113,16 @@ impl AnalyticsEngine {
     /// Get comprehensive cluster analytics
     pub async fn get_cluster_analytics(&self) -> Result<ClusterAnalytics> {
         let current_metrics = self.monitor.get_cluster_aggregated_metrics().await?;
-        let predictions = self.predictor.get_predictions(self.config.prediction_horizon_hours).await?;
+        let predictions = self
+            .predictor
+            .get_predictions(self.config.prediction_horizon_hours)
+            .await?;
         let anomalies = self.anomaly_detector.get_recent_anomalies().await?;
         let health_score = self.health_scorer.get_current_health_score().await?;
-        let recommendations = self.health_scorer.get_optimization_recommendations().await?;
+        let recommendations = self
+            .health_scorer
+            .get_optimization_recommendations()
+            .await?;
 
         Ok(ClusterAnalytics {
             timestamp: current_timestamp(),
@@ -152,7 +162,10 @@ impl AnalyticsEngine {
             if metrics.cpu_usage_percent > self.config.alert_thresholds.cpu_usage_critical {
                 alerts.push(AnalyticsAlert::Critical {
                     alert_type: AlertType::HighCpuUsage,
-                    message: format!("CPU usage at {:.1}% exceeds critical threshold", metrics.cpu_usage_percent),
+                    message: format!(
+                        "CPU usage at {:.1}% exceeds critical threshold",
+                        metrics.cpu_usage_percent
+                    ),
                     severity: AlertSeverity::Critical,
                     timestamp: current_timestamp(),
                 });
@@ -161,16 +174,24 @@ impl AnalyticsEngine {
             if metrics.memory_usage_percent > self.config.alert_thresholds.memory_usage_critical {
                 alerts.push(AnalyticsAlert::Critical {
                     alert_type: AlertType::HighMemoryUsage,
-                    message: format!("Memory usage at {:.1}% exceeds critical threshold", metrics.memory_usage_percent),
+                    message: format!(
+                        "Memory usage at {:.1}% exceeds critical threshold",
+                        metrics.memory_usage_percent
+                    ),
                     severity: AlertSeverity::Critical,
                     timestamp: current_timestamp(),
                 });
             }
 
-            if metrics.average_network_latency_ms > self.config.alert_thresholds.network_latency_critical_ms {
+            if metrics.average_network_latency_ms
+                > self.config.alert_thresholds.network_latency_critical_ms
+            {
                 alerts.push(AnalyticsAlert::Warning {
                     alert_type: AlertType::HighNetworkLatency,
-                    message: format!("Network latency at {:.0}ms exceeds threshold", metrics.average_network_latency_ms),
+                    message: format!(
+                        "Network latency at {:.0}ms exceeds threshold",
+                        metrics.average_network_latency_ms
+                    ),
                     severity: AlertSeverity::Warning,
                     timestamp: current_timestamp(),
                 });

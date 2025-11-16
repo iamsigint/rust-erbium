@@ -2,11 +2,11 @@
 //
 // These tests verify that different components work together correctly.
 
-use erbium_blockchain::*;
-use erbium_blockchain::core::{Block, Transaction};
+use erbium_blockchain::consensus::{pos::ProofOfStake, ConsensusConfig};
 use erbium_blockchain::core::types::Address;
-use erbium_blockchain::consensus::{ConsensusConfig, pos::ProofOfStake};
+use erbium_blockchain::core::{Block, Transaction};
 use erbium_blockchain::storage::database::Database;
+use erbium_blockchain::*;
 
 #[tokio::test]
 async fn test_basic_transaction_flow() {
@@ -25,7 +25,10 @@ async fn test_basic_transaction_flow() {
 
     // Validate transaction
     assert!(transaction.validate_basic().is_ok());
-    assert_eq!(transaction.transaction_type, crate::core::transaction::TransactionType::Transfer);
+    assert_eq!(
+        transaction.transaction_type,
+        crate::core::transaction::TransactionType::Transfer
+    );
     assert_eq!(transaction.amount, 1000);
     assert_eq!(transaction.fee, 10);
 
@@ -96,16 +99,16 @@ async fn test_block_creation_and_validation() {
     let validator = Address::new("0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string()).unwrap();
 
     // Create a block with transactions
-    let transactions = vec![
-        Transaction::new_transfer(
-            Address::new("0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string()).unwrap(),
-            Address::new("0x742d35Cc6634C0532925a3b844Bc454e4438f44f".to_string()).unwrap(),
-            1000, 10, 1,
-        )
-    ];
+    let transactions = vec![Transaction::new_transfer(
+        Address::new("0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string()).unwrap(),
+        Address::new("0x742d35Cc6634C0532925a3b844Bc454e4438f44f".to_string()).unwrap(),
+        1000,
+        10,
+        1,
+    )];
 
     let block = Block::new(
-        1, // block number
+        1,                                         // block number
         crate::core::types::Hash::new(b"genesis"), // previous hash
         transactions,
         validator.as_str().to_string(),
@@ -147,13 +150,16 @@ async fn test_end_to_end_flow() {
 
     // Generate a real Dilithium keypair for the validator
     let keypair = crate::crypto::dilithium::DilithiumKeypair::generate().unwrap();
-    pos.set_validator_public_key(validator.clone(), keypair.public_key).unwrap();
+    pos.set_validator_public_key(validator.clone(), keypair.public_key)
+        .unwrap();
 
     // Create transaction
     let transaction = Transaction::new_transfer(
         Address::new("0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string()).unwrap(),
         Address::new("0x742d35Cc6634C0532925a3b844Bc454e4438f44f".to_string()).unwrap(),
-        1000, 10, 1,
+        1000,
+        10,
+        1,
     );
 
     // Create block

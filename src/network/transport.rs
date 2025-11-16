@@ -1,14 +1,14 @@
 // src/network/transport.rs
 
 use crate::network::p2p_network::{NetworkMessage, P2PNetwork};
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::{self, Duration};
-use serde::{Serialize, Deserialize};
 
 /// Transport configuration
 #[derive(Debug, Clone)]
@@ -67,10 +67,7 @@ pub struct P2PTransport {
 
 impl P2PTransport {
     /// Create new P2P transport
-    pub fn new(
-        config: TransportConfig,
-        p2p_network: Arc<RwLock<P2PNetwork>>,
-    ) -> Self {
+    pub fn new(config: TransportConfig, p2p_network: Arc<RwLock<P2PNetwork>>) -> Self {
         let (tx, _) = mpsc::unbounded_channel();
         let (shutdown_tx, _) = mpsc::unbounded_channel();
 
@@ -86,8 +83,12 @@ impl P2PTransport {
 
     /// Start the transport layer
     pub async fn start(&mut self) -> Result<()> {
-        log::info!("Starting TCP P2P transport layer on {}", self.config.listen_address);
-        self.running.store(true, std::sync::atomic::Ordering::SeqCst);
+        log::info!(
+            "Starting TCP P2P transport layer on {}",
+            self.config.listen_address
+        );
+        self.running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
 
         // Create message channels
         let (message_tx, mut message_rx) = mpsc::unbounded_channel::<(String, NetworkMessage)>();
@@ -97,10 +98,19 @@ impl P2PTransport {
         self.shutdown_sender = shutdown_tx;
 
         // Start TCP listener
-        let listener = TcpListener::bind(&self.config.listen_address).await
-            .map_err(|e| BlockchainError::Network(format!("Failed to bind to {}: {}", self.config.listen_address, e)))?;
+        let listener = TcpListener::bind(&self.config.listen_address)
+            .await
+            .map_err(|e| {
+                BlockchainError::Network(format!(
+                    "Failed to bind to {}: {}",
+                    self.config.listen_address, e
+                ))
+            })?;
 
-        log::info!("TCP transport layer listening on {}", self.config.listen_address);
+        log::info!(
+            "TCP transport layer listening on {}",
+            self.config.listen_address
+        );
 
         let connections = Arc::clone(&self.connections);
         let p2p_network = Arc::clone(&self.p2p_network);
@@ -167,7 +177,8 @@ impl P2PTransport {
     /// Stop the transport layer
     pub async fn stop(&self) -> Result<()> {
         log::info!("Stopping TCP P2P transport layer");
-        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
 
         // Send shutdown signal
         let _ = self.shutdown_sender.send(());
@@ -182,10 +193,13 @@ impl P2PTransport {
     /// Send a message to a specific peer
     pub async fn send_message(&self, peer_id: &str, message: NetworkMessage) -> Result<()> {
         if !self.is_running() {
-            return Err(BlockchainError::Network("Transport not running".to_string()));
+            return Err(BlockchainError::Network(
+                "Transport not running".to_string(),
+            ));
         }
 
-        self.message_sender.send((peer_id.to_string(), message))
+        self.message_sender
+            .send((peer_id.to_string(), message))
             .map_err(|_| BlockchainError::Network("Failed to queue message".to_string()))?;
 
         Ok(())
@@ -194,7 +208,9 @@ impl P2PTransport {
     /// Broadcast a message to all connected peers
     pub async fn broadcast_message(&self, message: NetworkMessage) -> Result<()> {
         if !self.is_running() {
-            return Err(BlockchainError::Network("Transport not running".to_string()));
+            return Err(BlockchainError::Network(
+                "Transport not running".to_string(),
+            ));
         }
 
         let connections = self.connections.read().await;
@@ -210,7 +226,9 @@ impl P2PTransport {
     /// Connect to a peer
     pub async fn connect_to_peer(&self, address: &str) -> Result<()> {
         if !self.is_running() {
-            return Err(BlockchainError::Network("Transport not running".to_string()));
+            return Err(BlockchainError::Network(
+                "Transport not running".to_string(),
+            ));
         }
 
         log::info!("Connecting to peer: {}", address);
@@ -219,17 +237,22 @@ impl P2PTransport {
         {
             let connections = self.connections.read().await;
             if connections.len() >= self.config.max_connections {
-                return Err(BlockchainError::Network("Max connections reached".to_string()));
+                return Err(BlockchainError::Network(
+                    "Max connections reached".to_string(),
+                ));
             }
         }
 
         // Attempt TCP connection
-        let stream = tokio::time::timeout(
-            self.config.connection_timeout,
-            TcpStream::connect(address)
-        ).await
-        .map_err(|_| BlockchainError::Network(format!("Connection timeout to {}", address)))?
-        .map_err(|e| BlockchainError::Network(format!("Failed to connect to {}: {}", address, e)))?;
+        let stream =
+            tokio::time::timeout(self.config.connection_timeout, TcpStream::connect(address))
+                .await
+                .map_err(|_| {
+                    BlockchainError::Network(format!("Connection timeout to {}", address))
+                })?
+                .map_err(|e| {
+                    BlockchainError::Network(format!("Failed to connect to {}: {}", address, e))
+                })?;
 
         // Generate peer ID from address for now
         let peer_id = format!("peer_{}", address.replace(".", "_").replace(":", "_"));
@@ -237,14 +260,17 @@ impl P2PTransport {
         // Add to connections
         {
             let mut connections = self.connections.write().await;
-            connections.insert(peer_id.clone(), ConnectionInfo {
-                peer_id: peer_id.clone(),
-                address: address.to_string(),
-                connected_at: current_timestamp(),
-                last_message: current_timestamp(),
-                messages_sent: 0,
-                messages_received: 0,
-            });
+            connections.insert(
+                peer_id.clone(),
+                ConnectionInfo {
+                    peer_id: peer_id.clone(),
+                    address: address.to_string(),
+                    connected_at: current_timestamp(),
+                    last_message: current_timestamp(),
+                    messages_sent: 0,
+                    messages_received: 0,
+                },
+            );
         }
 
         // Spawn connection handler
@@ -254,7 +280,15 @@ impl P2PTransport {
         let address_clone = address.to_string();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, address_clone.clone(), connections_clone, p2p_network_clone, config_clone).await {
+            if let Err(e) = handle_connection(
+                stream,
+                address_clone.clone(),
+                connections_clone,
+                p2p_network_clone,
+                config_clone,
+            )
+            .await
+            {
                 log::error!("Connection handler error for {}: {}", address_clone, e);
             }
         });
@@ -385,27 +419,25 @@ fn try_parse_message(data: &[u8]) -> Option<(NetworkMessage, Vec<u8>)> {
     let remaining = data[4 + message_len..].to_vec();
 
     match bincode::deserialize::<MessageEnvelope>(message_data) {
-        Ok(envelope) => {
-            match envelope.message_type.as_str() {
-                "ping" => Some((NetworkMessage::Ping, remaining)),
-                "pong" => Some((NetworkMessage::Pong, remaining)),
-                "new_block" => {
-                    if let Ok(block) = bincode::deserialize(&envelope.payload) {
-                        Some((NetworkMessage::NewBlock(block), remaining))
-                    } else {
-                        None
-                    }
+        Ok(envelope) => match envelope.message_type.as_str() {
+            "ping" => Some((NetworkMessage::Ping, remaining)),
+            "pong" => Some((NetworkMessage::Pong, remaining)),
+            "new_block" => {
+                if let Ok(block) = bincode::deserialize(&envelope.payload) {
+                    Some((NetworkMessage::NewBlock(block), remaining))
+                } else {
+                    None
                 }
-                "new_transaction" => {
-                    if let Ok(tx) = bincode::deserialize(&envelope.payload) {
-                        Some((NetworkMessage::NewTransaction(tx), remaining))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
             }
-        }
+            "new_transaction" => {
+                if let Ok(tx) = bincode::deserialize(&envelope.payload) {
+                    Some((NetworkMessage::NewTransaction(tx), remaining))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        },
         Err(_) => None,
     }
 }
@@ -491,19 +523,24 @@ mod tests {
     use super::*;
     use crate::core::chain::PersistentBlockchain;
     use crate::network::p2p_network::P2PConfig;
+    use std::sync::Arc;
     use tempfile::TempDir;
     use tokio::sync::RwLock;
-    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_transport_creation() {
         let temp_dir = TempDir::new().unwrap();
         let blockchain = Arc::new(RwLock::new(
-            PersistentBlockchain::new(temp_dir.path().to_str().unwrap()).await.unwrap()
+            PersistentBlockchain::new(temp_dir.path().to_str().unwrap())
+                .await
+                .unwrap(),
         ));
 
         let p2p_config = P2PConfig::default();
-        let p2p_network = Arc::new(RwLock::new(P2PNetwork::new(p2p_config, Arc::clone(&blockchain))));
+        let p2p_network = Arc::new(RwLock::new(P2PNetwork::new(
+            p2p_config,
+            Arc::clone(&blockchain),
+        )));
 
         let transport_config = TransportConfig::default();
         let transport = P2PTransport::new(transport_config, p2p_network);
@@ -515,11 +552,16 @@ mod tests {
     async fn test_transport_start_stop() {
         let temp_dir = TempDir::new().unwrap();
         let blockchain = Arc::new(RwLock::new(
-            PersistentBlockchain::new(temp_dir.path().to_str().unwrap()).await.unwrap()
+            PersistentBlockchain::new(temp_dir.path().to_str().unwrap())
+                .await
+                .unwrap(),
         ));
 
         let p2p_config = P2PConfig::default();
-        let p2p_network = Arc::new(RwLock::new(P2PNetwork::new(p2p_config, Arc::clone(&blockchain))));
+        let p2p_network = Arc::new(RwLock::new(P2PNetwork::new(
+            p2p_config,
+            Arc::clone(&blockchain),
+        )));
 
         let transport_config = TransportConfig::default();
         let mut transport = P2PTransport::new(transport_config, p2p_network);

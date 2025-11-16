@@ -8,25 +8,25 @@ use clap::Parser;
 pub struct Cli {
     #[arg(long, default_value = "mainnet")]
     pub network: String,
-    
+
     #[arg(long, default_value_t = 3030)]
     pub port: u16,
-    
+
     #[arg(long, default_value_t = 8545)]
     pub rpc_port: u16,
-    
+
     #[arg(long, default_value_t = 8080)]
     pub rest_port: u16,
-    
+
     #[arg(long, default_value = "./data")]
     pub data_dir: String,
-    
+
     #[arg(long, default_value_t = 50)]
     pub max_peers: u32,
-    
+
     #[arg(long)]
     pub enable_mining: bool,
-    
+
     #[arg(long, default_value = "info")]
     pub log_level: String,
 }

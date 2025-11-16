@@ -14,44 +14,44 @@ impl Hash {
         hasher.update(data);
         Hash(hasher.finalize().into())
     }
-    
+
     /// Creates a hash from raw bytes (must be 32 bytes)
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Hash(bytes)
     }
-    
+
     /// Returns the hash as a byte array reference
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
-    
+
     /// Converts hash to hexadecimal string
     pub fn to_hex(&self) -> String {
         hex::encode(self.0)
     }
-    
+
     /// Converts hash to byte vector
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec()
     }
-    
+
     /// Creates a hash from a hexadecimal string
     pub fn from_hex(hex_str: &str) -> Result<Self, hex::FromHexError> {
         let bytes = hex::decode(hex_str)?;
         if bytes.len() != 32 {
             return Err(hex::FromHexError::InvalidStringLength);
         }
-        
+
         let mut array = [0u8; 32];
         array.copy_from_slice(&bytes);
         Ok(Hash(array))
     }
-    
+
     /// Zero hash (all zeros)
     pub fn zero() -> Self {
         Hash([0u8; 32])
     }
-    
+
     /// Check if hash is zero
     pub fn is_zero(&self) -> bool {
         self.0 == [0u8; 32]
@@ -100,20 +100,20 @@ impl Address {
         if addr.len() != 42 || !addr.starts_with("0x") {
             return Err(AddressError::InvalidFormat);
         }
-        
+
         // Basic hex validation
         if hex::decode(&addr[2..]).is_err() {
             return Err(AddressError::InvalidHex);
         }
-        
+
         Ok(Address(addr))
     }
-    
+
     /// Creates an address without validation (use carefully)
     pub fn new_unchecked(addr: String) -> Self {
         Address(addr)
     }
-    
+
     /// Returns address as string slice
     pub fn as_str(&self) -> &str {
         &self.0
@@ -176,8 +176,12 @@ pub enum AddressError {
 impl fmt::Display for AddressError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AddressError::InvalidFormat => write!(f, "Address must start with 0x and be 42 characters long"),
-            AddressError::InvalidHex => write!(f, "Address contains invalid hexadecimal characters"),
+            AddressError::InvalidFormat => {
+                write!(f, "Address must start with 0x and be 42 characters long")
+            }
+            AddressError::InvalidHex => {
+                write!(f, "Address contains invalid hexadecimal characters")
+            }
             AddressError::InvalidLength => write!(f, "Address has invalid length"),
         }
     }
@@ -192,7 +196,9 @@ pub type Timestamp = u64;
 pub type Difficulty = u64;
 
 /// Nonce for mining/validation
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
 pub struct Nonce(pub u64);
 
 impl Nonce {
@@ -200,24 +206,22 @@ impl Nonce {
     pub fn new(value: u64) -> Self {
         Nonce(value)
     }
-    
+
     /// Returns the inner value
     pub fn value(&self) -> u64 {
         self.0
     }
-    
+
     /// Increments the nonce by 1
     pub fn increment(&mut self) {
         self.0 += 1;
     }
-    
+
     /// Zero nonce
     pub fn zero() -> Self {
         Nonce(0)
     }
 }
-
-
 
 impl From<u64> for Nonce {
     fn from(n: u64) -> Self {
@@ -246,27 +250,27 @@ impl Amount {
     pub fn new(value: u128) -> Self {
         Amount(value)
     }
-    
+
     /// Zero amount
     pub fn zero() -> Self {
         Amount(0)
     }
-    
+
     /// Check if amount is zero
     pub fn is_zero(&self) -> bool {
         self.0 == 0
     }
-    
+
     /// Add two amounts
     pub fn checked_add(self, other: Self) -> Option<Self> {
         self.0.checked_add(other.0).map(Amount)
     }
-    
+
     /// Subtract two amounts
     pub fn checked_sub(self, other: Self) -> Option<Self> {
         self.0.checked_sub(other.0).map(Amount)
     }
-    
+
     /// Multiply amount by scalar
     pub fn checked_mul(self, scalar: u128) -> Option<Self> {
         self.0.checked_mul(scalar).map(Amount)
@@ -344,16 +348,16 @@ mod tests {
     fn test_hash_operations() {
         let data = b"hello world";
         let hash = Hash::new(data);
-        
+
         // Test hex conversion
         let hex_str = hash.to_hex();
         let hash_from_hex = Hash::from_hex(&hex_str).unwrap();
         assert_eq!(hash, hash_from_hex);
-        
+
         // Test zero hash
         let zero_hash = Hash::zero();
         assert!(zero_hash.is_zero());
-        
+
         // Test byte conversion
         let bytes = hash.as_bytes();
         let hash_from_bytes = Hash::from_bytes(*bytes);
@@ -366,11 +370,11 @@ mod tests {
         let valid_addr = "0x742d35Cc6634C0532925a3b8D4a5b1a4b6c6d7e8";
         let address = Address::new(valid_addr.to_string()).unwrap();
         assert_eq!(address.as_str(), valid_addr);
-        
+
         // Invalid format
         let invalid_addr = "invalid";
         assert!(Address::new(invalid_addr.to_string()).is_err());
-        
+
         // Invalid length
         let short_addr = "0x1234";
         assert!(Address::new(short_addr.to_string()).is_err());
@@ -380,10 +384,10 @@ mod tests {
     fn test_nonce_operations() {
         let mut nonce = Nonce::default();
         assert_eq!(nonce.value(), 0);
-        
+
         nonce.increment();
         assert_eq!(nonce.value(), 1);
-        
+
         let nonce_from_u64 = Nonce::from(42);
         assert_eq!(nonce_from_u64.value(), 42);
     }
@@ -392,13 +396,13 @@ mod tests {
     fn test_amount_operations() {
         let amount1 = Amount::new(100);
         let amount2 = Amount::new(50);
-        
+
         let sum = amount1.checked_add(amount2).unwrap();
         assert_eq!(sum, Amount::new(150));
-        
+
         let diff = amount1.checked_sub(amount2).unwrap();
         assert_eq!(diff, Amount::new(50));
-        
+
         let zero = Amount::zero();
         assert!(zero.is_zero());
     }

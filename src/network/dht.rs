@@ -1,11 +1,12 @@
 // src/network/dht.rs
 
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
+use hex;
+use rand::Rng;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use tokio::time::{Duration, Instant};
-use rand::Rng;
-use sha2::{Sha256, Digest};
 
 /// Node ID (160-bit for Kademlia compatibility)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -33,6 +34,24 @@ impl NodeId {
         let mut bytes = [0u8; 20];
         bytes.copy_from_slice(&result[..20]);
         Self(bytes)
+    }
+
+    /// Create NodeId from a hexadecimal string representation
+    pub fn from_hex(hex_str: &str) -> Result<Self> {
+        let cleaned = hex_str.trim_start_matches("0x");
+        let bytes = hex::decode(cleaned)
+            .map_err(|e| BlockchainError::Network(format!("Invalid node id hex: {}", e)))?;
+
+        if bytes.len() != 20 {
+            return Err(BlockchainError::Network(format!(
+                "Invalid node id length: expected 20 bytes, got {}",
+                bytes.len()
+            )));
+        }
+
+        let mut array = [0u8; 20];
+        array.copy_from_slice(&bytes);
+        Ok(Self(array))
     }
 
     /// Calculate XOR distance between two NodeIds
@@ -165,23 +184,23 @@ impl KBucket {
 /// DHT Configuration
 #[derive(Debug, Clone)]
 pub struct DHTConfig {
-    pub k: usize,                    // Bucket size (k)
-    pub alpha: usize,               // Parallelism factor (alpha)
-    pub id_bits: usize,             // ID bits (160 for Kademlia)
-    pub refresh_interval: Duration, // Bucket refresh interval
+    pub k: usize,                     // Bucket size (k)
+    pub alpha: usize,                 // Parallelism factor (alpha)
+    pub id_bits: usize,               // ID bits (160 for Kademlia)
+    pub refresh_interval: Duration,   // Bucket refresh interval
     pub republish_interval: Duration, // Republish interval
-    pub expire_interval: Duration,  // Expire interval
+    pub expire_interval: Duration,    // Expire interval
 }
 
 impl Default for DHTConfig {
     fn default() -> Self {
         Self {
-            k: 20,                          // Standard Kademlia k
-            alpha: 3,                       // Standard alpha
-            id_bits: 160,                   // 160-bit IDs
-            refresh_interval: Duration::from_secs(3600), // 1 hour
+            k: 20,                                          // Standard Kademlia k
+            alpha: 3,                                       // Standard alpha
+            id_bits: 160,                                   // 160-bit IDs
+            refresh_interval: Duration::from_secs(3600),    // 1 hour
             republish_interval: Duration::from_secs(86400), // 24 hours
-            expire_interval: Duration::from_secs(86400), // 24 hours
+            expire_interval: Duration::from_secs(86400),    // 24 hours
         }
     }
 }
@@ -247,7 +266,9 @@ impl DHT {
     /// Add a known node to bootstrap the network
     pub fn add_bootstrap_node(&mut self, contact: Contact) -> Result<()> {
         if contact.node_id == self.node_id {
-            return Err(BlockchainError::Network("Cannot add self as bootstrap node".to_string()));
+            return Err(BlockchainError::Network(
+                "Cannot add self as bootstrap node".to_string(),
+            ));
         }
 
         self.known_nodes.insert(contact.node_id);
@@ -285,13 +306,13 @@ impl DHT {
     /// Start node lookup
     pub fn start_lookup(&mut self, target: NodeId) -> Result<()> {
         if self.pending_queries.contains_key(&target) {
-            return Err(BlockchainError::Network("Lookup already in progress".to_string()));
+            return Err(BlockchainError::Network(
+                "Lookup already in progress".to_string(),
+            ));
         }
 
         let closest_nodes = self.find_closest_nodes(&target, self.config.k);
-        let active_contacts = closest_nodes.iter()
-            .map(|c| c.node_id)
-            .collect();
+        let active_contacts = closest_nodes.iter().map(|c| c.node_id).collect();
 
         let query_state = QueryState {
             target,
@@ -309,7 +330,11 @@ impl DHT {
     }
 
     /// Handle FIND_NODE response
-    pub fn handle_find_node_response(&mut self, from: NodeId, contacts: Vec<Contact>) -> Result<()> {
+    pub fn handle_find_node_response(
+        &mut self,
+        from: NodeId,
+        contacts: Vec<Contact>,
+    ) -> Result<()> {
         // Update contact last seen
         self.update_contact_last_seen(&from);
 
@@ -340,8 +365,8 @@ impl DHT {
     /// Check if lookup is complete
     pub fn is_lookup_complete(&self, target: &NodeId) -> bool {
         if let Some(query) = self.pending_queries.get(target) {
-            query.active_contacts.is_empty() ||
-            query.start_time.elapsed() > Duration::from_secs(30) // Timeout after 30 seconds
+            query.active_contacts.is_empty() || query.start_time.elapsed() > Duration::from_secs(30)
+        // Timeout after 30 seconds
         } else {
             true
         }
@@ -349,21 +374,22 @@ impl DHT {
 
     /// Get lookup results
     pub fn get_lookup_results(&self, target: &NodeId) -> Option<Vec<Contact>> {
-        self.pending_queries.get(target)
+        self.pending_queries
+            .get(target)
             .map(|query| query.closest_nodes.clone())
     }
 
     /// Complete lookup and clean up
     pub fn complete_lookup(&mut self, target: &NodeId) -> Option<Vec<Contact>> {
-        self.pending_queries.remove(target)
+        self.pending_queries
+            .remove(target)
             .map(|query| query.closest_nodes)
     }
 
     /// Update contact last seen time
     pub fn update_contact_last_seen(&mut self, node_id: &NodeId) {
         for bucket in &mut self.buckets {
-            if let Some(contact) = bucket.contacts.iter_mut()
-                .find(|c| c.node_id == *node_id) {
+            if let Some(contact) = bucket.contacts.iter_mut().find(|c| c.node_id == *node_id) {
                 contact.mark_seen();
                 break;
             }
@@ -373,8 +399,7 @@ impl DHT {
     /// Mark contact as failed
     pub fn mark_contact_failed(&mut self, node_id: &NodeId) {
         for bucket in &mut self.buckets {
-            if let Some(contact) = bucket.contacts.iter_mut()
-                .find(|c| c.node_id == *node_id) {
+            if let Some(contact) = bucket.contacts.iter_mut().find(|c| c.node_id == *node_id) {
                 contact.mark_failed();
                 break;
             }
@@ -472,7 +497,8 @@ mod tests {
     #[test]
     fn test_bucket_index() {
         let id1 = NodeId::from_bytes([0; 20]);
-        let id2 = NodeId::from_bytes([128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let id2 =
+            NodeId::from_bytes([128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
         let bucket_idx = id1.bucket_index(&id2);
         assert_eq!(bucket_idx, 152); // MSB is at bit 7 in byte 0: 159 - 7 = 152

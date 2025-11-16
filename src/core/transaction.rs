@@ -1,7 +1,7 @@
 // src/core/transaction.rs
+use crate::core::types::{Address, Hash};
+use crate::utils::error::{BlockchainError, Result};
 use serde::{Deserialize, Serialize};
-use crate::core::types::{Hash, Address};
-use crate::utils::error::{Result, BlockchainError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)] // Added Eq
 pub enum TransactionType {
@@ -30,18 +30,12 @@ pub struct Transaction {
     // New fields for confidential transactions
     pub input_commitments: Option<Vec<Vec<u8>>>, // Entry commitments for confidential transactions
     pub output_commitments: Option<Vec<Vec<u8>>>, // Exit commitments for confidential transactions
-    pub range_proofs: Option<Vec<Vec<u8>>>, // Range proofs for confidential values
+    pub range_proofs: Option<Vec<Vec<u8>>>,      // Range proofs for confidential values
     pub binding_signature: Option<Vec<u8>>, // Connection signature for confidential transactions
 }
 
 impl Transaction {
-    pub fn new_transfer(
-        from: Address,
-        to: Address,
-        amount: u64,
-        fee: u64,
-        nonce: u64,
-    ) -> Self {
+    pub fn new_transfer(from: Address, to: Address, amount: u64, fee: u64, nonce: u64) -> Self {
         Transaction {
             version: 1,
             transaction_type: TransactionType::Transfer,
@@ -60,7 +54,7 @@ impl Transaction {
             binding_signature: None,
         }
     }
-    
+
     /// Creates a new confidential transfer transaction
     #[allow(clippy::too_many_arguments)]
     pub fn new_confidential_transfer(
@@ -93,7 +87,7 @@ impl Transaction {
             binding_signature: Some(binding_signature),
         }
     }
-    
+
     /// Creates a contract deployment transaction
     pub fn new_contract_deployment(
         from: Address,
@@ -120,7 +114,7 @@ impl Transaction {
             binding_signature: None,
         }
     }
-    
+
     /// Creates a contract call transaction
     pub fn new_contract_call(
         from: Address,
@@ -148,14 +142,9 @@ impl Transaction {
             binding_signature: None,
         }
     }
-    
+
     /// Creates a staking transaction
-    pub fn new_stake(
-        from: Address,
-        amount: u64,
-        fee: u64,
-        nonce: u64,
-    ) -> Self {
+    pub fn new_stake(from: Address, amount: u64, fee: u64, nonce: u64) -> Self {
         Transaction {
             version: 1,
             transaction_type: TransactionType::Stake,
@@ -175,14 +164,9 @@ impl Transaction {
             binding_signature: None,
         }
     }
-    
+
     /// Creates an unstaking transaction
-    pub fn new_unstake(
-        from: Address,
-        amount: u64,
-        fee: u64,
-        nonce: u64,
-    ) -> Self {
+    pub fn new_unstake(from: Address, amount: u64, fee: u64, nonce: u64) -> Self {
         Transaction {
             version: 1,
             transaction_type: TransactionType::Unstake,
@@ -201,7 +185,7 @@ impl Transaction {
             binding_signature: None,
         }
     }
-    
+
     /// Creates a governance voting transaction
     pub fn new_vote(
         from: Address,
@@ -212,7 +196,7 @@ impl Transaction {
     ) -> Self {
         let mut data = proposal_id.to_be_bytes().to_vec();
         data.extend(vote_data);
-        
+
         Transaction {
             version: 1,
             transaction_type: TransactionType::Vote,
@@ -232,7 +216,7 @@ impl Transaction {
             binding_signature: None,
         }
     }
-    
+
     pub fn hash(&self) -> Hash {
         // For hashing, we exclude temporary fields such as signature
         let tx_data = bincode::serialize(&TransactionForHashing {
@@ -250,76 +234,86 @@ impl Transaction {
             output_commitments: self.output_commitments.clone(),
             range_proofs: self.range_proofs.clone(),
             binding_signature: self.binding_signature.clone(),
-        }).unwrap();
-        
+        })
+        .unwrap();
+
         Hash::new(&tx_data)
     }
-    
+
     pub fn sign(&mut self, private_key: &[u8]) -> Result<()> {
         use crate::crypto::dilithium::Dilithium;
-        
+
         let tx_hash = self.hash();
         self.signature = Dilithium::sign(private_key, tx_hash.as_bytes())?;
         Ok(())
     }
-    
+
     pub fn verify_signature(&self, public_key: &[u8]) -> Result<bool> {
         use crate::crypto::dilithium::Dilithium;
-        
+
         let tx_hash = self.hash();
         Dilithium::verify(public_key, tx_hash.as_bytes(), &self.signature)
     }
-    
+
     pub fn is_private(&self) -> bool {
         self.zk_proof.is_some() || self.transaction_type == TransactionType::ConfidentialTransfer
     }
-    
+
     pub fn is_confidential(&self) -> bool {
         self.transaction_type == TransactionType::ConfidentialTransfer
     }
-    
+
     /// Returns proposal data for voting transactions
     pub fn get_vote_data(&self) -> Option<(u64, Vec<u8>)> {
         if self.transaction_type != TransactionType::Vote {
             return None;
         }
-        
+
         if self.data.len() < 8 {
             return None;
         }
-        
+
         let proposal_id = u64::from_be_bytes([
-            self.data[0], self.data[1], self.data[2], self.data[3],
-            self.data[4], self.data[5], self.data[6], self.data[7],
+            self.data[0],
+            self.data[1],
+            self.data[2],
+            self.data[3],
+            self.data[4],
+            self.data[5],
+            self.data[6],
+            self.data[7],
         ]);
-        
+
         let vote_data = self.data[8..].to_vec();
-        
+
         Some((proposal_id, vote_data))
     }
-    
+
     /// Validates the basic structure of the transaction
     pub fn validate_basic(&self) -> Result<()> {
         // Allow zero fee for genesis transactions (from address 0x0)
         if self.fee == 0 && self.from.as_str() != "0x0000000000000000000000000000000000000000" {
             return Err(BlockchainError::InvalidTransaction("Zero fee".to_string()));
         }
-        
-        if self.timestamp > chrono::Utc::now().timestamp_millis() as u64 + 300000 { // 5 minutes in the future at most
-            return Err(BlockchainError::InvalidTransaction("Timestamp too far in future".to_string()));
+
+        if self.timestamp > chrono::Utc::now().timestamp_millis() as u64 + 300000 {
+            // 5 minutes in the future at most
+            return Err(BlockchainError::InvalidTransaction(
+                "Timestamp too far in future".to_string(),
+            ));
         }
-        
+
         // Specific validations by transaction type
         match self.transaction_type {
             TransactionType::ConfidentialTransfer => {
                 if self.zk_proof.is_none() {
                     return Err(BlockchainError::InvalidTransaction(
-                        "Confidential transfer requires ZK proof".to_string()
+                        "Confidential transfer requires ZK proof".to_string(),
                     ));
                 }
                 if self.input_commitments.is_none() || self.output_commitments.is_none() {
                     return Err(BlockchainError::InvalidTransaction(
-                        "Confidential transfer requires commitments".to_string()
+                        "Confidential transfer requires commitments".to_string(),
                     ));
                 }
             }
@@ -329,25 +323,27 @@ impl Transaction {
             TransactionType::ContractDeployment => {
                 if self.data.is_empty() {
                     return Err(BlockchainError::InvalidTransaction(
-                        "Contract deployment requires code".to_string()
+                        "Contract deployment requires code".to_string(),
                     ));
                 }
             }
             TransactionType::Stake | TransactionType::Unstake => {
                 if self.amount == 0 {
-                    return Err(BlockchainError::InvalidTransaction("Zero stake amount".to_string()));
+                    return Err(BlockchainError::InvalidTransaction(
+                        "Zero stake amount".to_string(),
+                    ));
                 }
             }
             TransactionType::Vote => {
                 if self.data.len() < 8 {
                     return Err(BlockchainError::InvalidTransaction(
-                        "Vote transaction requires proposal ID and vote data".to_string()
+                        "Vote transaction requires proposal ID and vote data".to_string(),
                     ));
                 }
             }
             _ => {}
         }
-        
+
         Ok(())
     }
 }

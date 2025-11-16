@@ -1,12 +1,12 @@
 // src/api/websocket.rs
-use warp::ws::{WebSocket, Ws, Message};
-use warp::Filter;
-use futures_util::{SinkExt, StreamExt};
 use crate::utils::error::BlockchainError;
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{broadcast, RwLock};
+use warp::ws::{Message, WebSocket, Ws};
+use warp::Filter;
 
 #[derive(Clone)]
 pub struct WebSocketServer {
@@ -29,37 +29,31 @@ impl WebSocketServer {
             next_client_id: Arc::new(RwLock::new(0)),
         })
     }
-    
+
     pub async fn start(&self) -> Result<(), BlockchainError> {
         let clients = self.clients.clone();
         let next_client_id = self.next_client_id.clone();
-        
-        let ws_route = warp::path("ws")
-            .and(warp::ws())
-            .map(move |ws: Ws| {
-                let clients = clients.clone();
-                let next_client_id = next_client_id.clone();
-                
-                ws.on_upgrade(move |socket| {
-                    Self::handle_connection(socket, clients, next_client_id)
-                })
-            });
-        
+
+        let ws_route = warp::path("ws").and(warp::ws()).map(move |ws: Ws| {
+            let clients = clients.clone();
+            let next_client_id = next_client_id.clone();
+
+            ws.on_upgrade(move |socket| Self::handle_connection(socket, clients, next_client_id))
+        });
+
         log::info!("Starting WebSocket server on port {}", self.port);
-        warp::serve(ws_route)
-            .run(([0, 0, 0, 0], self.port))
-            .await;
-        
+        warp::serve(ws_route).run(([0, 0, 0, 0], self.port)).await;
+
         Ok(())
     }
-    
+
     pub async fn stop(&self) -> Result<(), BlockchainError> {
         // Close all client connections
         let mut clients = self.clients.write().await;
         clients.clear();
         Ok(())
     }
-    
+
     async fn handle_connection(
         ws: WebSocket,
         clients: Arc<RwLock<HashMap<usize, broadcast::Sender<String>>>>,
@@ -71,22 +65,22 @@ impl WebSocketServer {
             *id_lock += 1;
             id
         };
-        
+
         log::info!("WebSocket client connected: {}", client_id);
-        
+
         // Create broadcast channel for this client
         let (tx, mut rx) = broadcast::channel(100);
-        
+
         {
             clients.write().await.insert(client_id, tx);
         }
-        
+
         // Split WebSocket into sender and receiver
         let (mut ws_tx, mut ws_rx) = ws.split();
-        
+
         // Clone clients for the receive task
         let clients_for_recv = clients.clone();
-        
+
         // Task to send messages to WebSocket
         let send_task = tokio::spawn(async move {
             while let Ok(message) = rx.recv().await {
@@ -95,7 +89,7 @@ impl WebSocketServer {
                 }
             }
         });
-        
+
         // Task to receive messages from WebSocket
         let recv_task = tokio::spawn(async move {
             while let Some(result) = ws_rx.next().await {
@@ -109,25 +103,25 @@ impl WebSocketServer {
                 }
             }
         });
-        
+
         // Wait for either task to finish
         tokio::select! {
             _ = send_task => {},
             _ = recv_task => {},
         }
-        
+
         // Cleanup
         clients.write().await.remove(&client_id);
         log::info!("WebSocket client disconnected: {}", client_id);
     }
-    
+
     async fn handle_message(
         client_id: usize,
         message: &str,
         clients: &Arc<RwLock<HashMap<usize, broadcast::Sender<String>>>>,
     ) {
         log::debug!("WebSocket message from client {}: {}", client_id, message);
-        
+
         // Parse message
         let ws_message: Result<WsMessage, _> = serde_json::from_str(message);
         if let Ok(ws_message) = ws_message {
@@ -165,7 +159,7 @@ impl WebSocketServer {
             Self::send_to_client(client_id, &error, clients).await;
         }
     }
-    
+
     async fn handle_subscribe(
         client_id: usize,
         data: &serde_json::Value,
@@ -175,7 +169,7 @@ impl WebSocketServer {
             for topic in topics {
                 if let Some(topic_str) = topic.as_str() {
                     log::info!("Client {} subscribed to topic: {}", client_id, topic_str);
-                    
+
                     // Send initial data for the topic
                     match topic_str {
                         "blocks" => {
@@ -191,7 +185,7 @@ impl WebSocketServer {
                     }
                 }
             }
-            
+
             let response = WsMessage {
                 r#type: "subscribed".to_string(),
                 data: serde_json::json!({
@@ -202,7 +196,7 @@ impl WebSocketServer {
             Self::send_to_client(client_id, &response, clients).await;
         }
     }
-    
+
     async fn handle_unsubscribe(
         client_id: usize,
         data: &serde_json::Value,
@@ -211,10 +205,14 @@ impl WebSocketServer {
         if let Some(topics) = data.get("topics").and_then(|t| t.as_array()) {
             for topic in topics {
                 if let Some(topic_str) = topic.as_str() {
-                    log::info!("Client {} unsubscribed from topic: {}", client_id, topic_str);
+                    log::info!(
+                        "Client {} unsubscribed from topic: {}",
+                        client_id,
+                        topic_str
+                    );
                 }
             }
-            
+
             let response = WsMessage {
                 r#type: "unsubscribed".to_string(),
                 data: serde_json::json!({
@@ -225,7 +223,7 @@ impl WebSocketServer {
             Self::send_to_client(client_id, &response, clients).await;
         }
     }
-    
+
     async fn send_to_client(
         client_id: usize,
         message: &WsMessage,
@@ -237,7 +235,7 @@ impl WebSocketServer {
             }
         }
     }
-    
+
     async fn send_to_client_by_type(
         client_id: usize,
         message_type: &str,
@@ -250,7 +248,7 @@ impl WebSocketServer {
         };
         Self::send_to_client(client_id, &message, clients).await;
     }
-    
+
     // Example notification methods
     async fn send_new_block_notification(
         client_id: usize,
@@ -262,10 +260,10 @@ impl WebSocketServer {
             "timestamp": chrono::Utc::now().timestamp_millis(),
             "transactionCount": 5
         });
-        
+
         Self::send_to_client_by_type(client_id, "newBlock", block_data, clients).await;
     }
-    
+
     async fn send_new_transaction_notification(
         client_id: usize,
         clients: &Arc<RwLock<HashMap<usize, broadcast::Sender<String>>>>,
@@ -277,10 +275,10 @@ impl WebSocketServer {
             "amount": 500,
             "fee": 5
         });
-        
+
         Self::send_to_client_by_type(client_id, "newTransaction", tx_data, clients).await;
     }
-    
+
     async fn send_validator_update(
         client_id: usize,
         clients: &Arc<RwLock<HashMap<usize, broadcast::Sender<String>>>>,
@@ -291,10 +289,10 @@ impl WebSocketServer {
             "active": true,
             "updateType": "heartbeat"
         });
-        
+
         Self::send_to_client_by_type(client_id, "validatorUpdate", validator_data, clients).await;
     }
-    
+
     // Method to broadcast to all clients
     pub async fn broadcast(&self, message: WsMessage) -> Result<(), BlockchainError> {
         if let Ok(json) = serde_json::to_string(&message) {

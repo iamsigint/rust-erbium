@@ -1,11 +1,11 @@
 // src/core/layer2.rs
 
-use crate::core::{Hash, Address, State};
-use crate::utils::error::{Result, BlockchainError};
+use crate::core::{Address, Hash, State};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 /// Layer 2 Configuration
 #[derive(Debug, Clone)]
@@ -22,8 +22,8 @@ impl Default for Layer2Config {
         Self {
             max_channels_per_user: 100,
             channel_timeout_blocks: 1000, // ~8 hours at 30s blocks
-            dispute_period_blocks: 100,    // ~50 minutes dispute window
-            min_channel_capacity: 1000,    // Minimum 1000 ERB
+            dispute_period_blocks: 100,   // ~50 minutes dispute window
+            min_channel_capacity: 1000,   // Minimum 1000 ERB
             max_channel_capacity: 1_000_000_000, // Maximum 1B ERB
         }
     }
@@ -111,13 +111,13 @@ impl PaymentChannel {
     pub fn update_balances(&mut self, new_balances: [u64; 2]) -> Result<()> {
         if new_balances[0] + new_balances[1] != self.total_capacity {
             return Err(BlockchainError::InvalidTransaction(
-                "Balance update must preserve total capacity".to_string()
+                "Balance update must preserve total capacity".to_string(),
             ));
         }
 
         if new_balances[0] > self.total_capacity || new_balances[1] > self.total_capacity {
             return Err(BlockchainError::InvalidTransaction(
-                "Individual balance cannot exceed total capacity".to_string()
+                "Individual balance cannot exceed total capacity".to_string(),
             ));
         }
 
@@ -136,7 +136,7 @@ impl PaymentChannel {
                 Ok(())
             }
             _ => Err(BlockchainError::InvalidTransaction(
-                "Channel must be active to initiate cooperative close".to_string()
+                "Channel must be active to initiate cooperative close".to_string(),
             )),
         }
     }
@@ -151,7 +151,7 @@ impl PaymentChannel {
                 Ok(())
             }
             _ => Err(BlockchainError::InvalidTransaction(
-                "Channel cannot be force closed in current state".to_string()
+                "Channel cannot be force closed in current state".to_string(),
             )),
         }
     }
@@ -164,7 +164,7 @@ impl PaymentChannel {
                 Ok(())
             }
             _ => Err(BlockchainError::InvalidTransaction(
-                "Channel cannot be finalized in current state".to_string()
+                "Channel cannot be finalized in current state".to_string(),
             )),
         }
     }
@@ -271,7 +271,7 @@ impl StateChannel {
     pub fn add_deposit(&mut self, participant: &Address, amount: u64) -> Result<()> {
         if !self.participants.contains(participant) {
             return Err(BlockchainError::InvalidTransaction(
-                "Participant not in channel".to_string()
+                "Participant not in channel".to_string(),
             ));
         }
 
@@ -283,7 +283,7 @@ impl StateChannel {
     pub fn update_state(&mut self, new_state_hash: Hash, sequence: u64) -> Result<()> {
         if sequence <= self.state_sequence {
             return Err(BlockchainError::InvalidTransaction(
-                "Sequence number must be higher".to_string()
+                "Sequence number must be higher".to_string(),
             ));
         }
 
@@ -328,51 +328,79 @@ impl Layer2Manager {
         current_height: u64,
     ) -> Result<Hash> {
         // Validate capacity
-        if capacity < self.config.min_channel_capacity || capacity > self.config.max_channel_capacity {
-            return Err(BlockchainError::InvalidTransaction(
-                format!("Channel capacity must be between {} and {}",
-                    self.config.min_channel_capacity, self.config.max_channel_capacity)
-            ));
+        if capacity < self.config.min_channel_capacity
+            || capacity > self.config.max_channel_capacity
+        {
+            return Err(BlockchainError::InvalidTransaction(format!(
+                "Channel capacity must be between {} and {}",
+                self.config.min_channel_capacity, self.config.max_channel_capacity
+            )));
         }
 
         // Check user channel limits
         {
-            let user_channels_a = self.user_channels.get(&participant_a).map(|s| s.len()).unwrap_or(0);
-            let user_channels_b = self.user_channels.get(&participant_b).map(|s| s.len()).unwrap_or(0);
+            let user_channels_a = self
+                .user_channels
+                .get(&participant_a)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            let user_channels_b = self
+                .user_channels
+                .get(&participant_b)
+                .map(|s| s.len())
+                .unwrap_or(0);
 
-            if user_channels_a >= self.config.max_channels_per_user ||
-               user_channels_b >= self.config.max_channels_per_user {
+            if user_channels_a >= self.config.max_channels_per_user
+                || user_channels_b >= self.config.max_channels_per_user
+            {
                 return Err(BlockchainError::InvalidTransaction(
-                    "User has reached maximum channel limit".to_string()
+                    "User has reached maximum channel limit".to_string(),
                 ));
             }
         }
 
         // Check balances
         let state = self.state.read().await;
-        let balance_a = state.get_balance(&participant_a)
+        let balance_a = state
+            .get_balance(&participant_a)
             .map_err(|_| BlockchainError::InvalidTransaction("Account not found".to_string()))?;
-        let balance_b = state.get_balance(&participant_b)
+        let balance_b = state
+            .get_balance(&participant_b)
             .map_err(|_| BlockchainError::InvalidTransaction("Account not found".to_string()))?;
 
         if balance_a < capacity / 2 || balance_b < capacity / 2 {
             return Err(BlockchainError::InvalidTransaction(
-                "Insufficient balance for channel capacity".to_string()
+                "Insufficient balance for channel capacity".to_string(),
             ));
         }
 
         // Create channel
         let timeout_height = current_height + self.config.channel_timeout_blocks;
-        let channel = PaymentChannel::new(participant_a.clone(), participant_b.clone(), capacity, timeout_height);
+        let channel = PaymentChannel::new(
+            participant_a.clone(),
+            participant_b.clone(),
+            capacity,
+            timeout_height,
+        );
         let channel_id = channel.channel_id;
 
         // Store channel
         self.payment_channels.insert(channel_id, channel);
-        self.user_channels.entry(participant_a.clone()).or_insert(HashSet::new()).insert(channel_id);
-        self.user_channels.entry(participant_b.clone()).or_insert(HashSet::new()).insert(channel_id);
+        self.user_channels
+            .entry(participant_a.clone())
+            .or_insert(HashSet::new())
+            .insert(channel_id);
+        self.user_channels
+            .entry(participant_b.clone())
+            .or_insert(HashSet::new())
+            .insert(channel_id);
 
-        log::info!("Created payment channel {} between {} and {}",
-            channel_id.to_hex(), participant_a.as_str(), participant_b.as_str());
+        log::info!(
+            "Created payment channel {} between {} and {}",
+            channel_id.to_hex(),
+            participant_a.as_str(),
+            participant_b.as_str()
+        );
 
         Ok(channel_id)
     }
@@ -385,28 +413,34 @@ impl Layer2Manager {
         new_balances: [u64; 2],
         sequence_number: u64,
     ) -> Result<()> {
-        let channel = self.payment_channels.get_mut(channel_id)
+        let channel = self
+            .payment_channels
+            .get_mut(channel_id)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Channel not found".to_string()))?;
 
         // Validate updater is participant
         if !channel.is_participant(updater) {
             return Err(BlockchainError::InvalidTransaction(
-                "Updater is not a channel participant".to_string()
+                "Updater is not a channel participant".to_string(),
             ));
         }
 
         // Validate sequence number
         if sequence_number <= channel.sequence_number {
             return Err(BlockchainError::InvalidTransaction(
-                "Sequence number must be higher than current".to_string()
+                "Sequence number must be higher than current".to_string(),
             ));
         }
 
         // Update balances
         channel.update_balances(new_balances)?;
 
-        log::debug!("Updated payment channel {} balances to [{}, {}]",
-            channel_id.to_hex(), new_balances[0], new_balances[1]);
+        log::debug!(
+            "Updated payment channel {} balances to [{}, {}]",
+            channel_id.to_hex(),
+            new_balances[0],
+            new_balances[1]
+        );
 
         Ok(())
     }
@@ -417,20 +451,25 @@ impl Layer2Manager {
         channel_id: &Hash,
         closer: &Address,
     ) -> Result<()> {
-        let channel = self.payment_channels.get_mut(channel_id)
+        let channel = self
+            .payment_channels
+            .get_mut(channel_id)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Channel not found".to_string()))?;
 
         // Validate closer is participant
         if !channel.is_participant(closer) {
             return Err(BlockchainError::InvalidTransaction(
-                "Closer is not a channel participant".to_string()
+                "Closer is not a channel participant".to_string(),
             ));
         }
 
         // Initiate cooperative close
         channel.initiate_cooperative_close()?;
 
-        log::info!("Initiated cooperative close for payment channel {}", channel_id.to_hex());
+        log::info!(
+            "Initiated cooperative close for payment channel {}",
+            channel_id.to_hex()
+        );
 
         Ok(())
     }
@@ -442,20 +481,26 @@ impl Layer2Manager {
         closer: &Address,
         current_height: u64,
     ) -> Result<()> {
-        let channel = self.payment_channels.get_mut(channel_id)
+        let channel = self
+            .payment_channels
+            .get_mut(channel_id)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Channel not found".to_string()))?;
 
         // Validate closer is participant
         if !channel.is_participant(closer) {
             return Err(BlockchainError::InvalidTransaction(
-                "Closer is not a channel participant".to_string()
+                "Closer is not a channel participant".to_string(),
             ));
         }
 
         // Force close
         channel.force_close(current_height)?;
 
-        log::info!("Force closed payment channel {} at height {}", channel_id.to_hex(), current_height);
+        log::info!(
+            "Force closed payment channel {} at height {}",
+            channel_id.to_hex(),
+            current_height
+        );
 
         Ok(())
     }
@@ -467,9 +512,11 @@ impl Layer2Manager {
 
     /// Get user's payment channels
     pub fn get_user_payment_channels(&self, user: &Address) -> Vec<&PaymentChannel> {
-        self.user_channels.get(user)
+        self.user_channels
+            .get(user)
             .map(|channel_ids| {
-                channel_ids.iter()
+                channel_ids
+                    .iter()
                     .filter_map(|id| self.payment_channels.get(id))
                     .collect()
             })
@@ -490,7 +537,10 @@ impl Layer2Manager {
         }
 
         if !expired_channels.is_empty() {
-            log::info!("Finalized {} expired payment channels", expired_channels.len());
+            log::info!(
+                "Finalized {} expired payment channels",
+                expired_channels.len()
+            );
         }
 
         Ok(expired_channels)
@@ -504,17 +554,21 @@ impl Layer2Manager {
     ) -> Result<Hash> {
         if participants.len() < 2 {
             return Err(BlockchainError::InvalidTransaction(
-                "State channel must have at least 2 participants".to_string()
+                "State channel must have at least 2 participants".to_string(),
             ));
         }
 
         // Check user limits
         for participant in &participants {
-            let user_channels = self.user_channels.entry(participant.clone()).or_insert(HashSet::new());
+            let user_channels = self
+                .user_channels
+                .entry(participant.clone())
+                .or_insert(HashSet::new());
             if user_channels.len() >= self.config.max_channels_per_user {
-                return Err(BlockchainError::InvalidTransaction(
-                    format!("User {} has reached maximum channel limit", participant.as_str())
-                ));
+                return Err(BlockchainError::InvalidTransaction(format!(
+                    "User {} has reached maximum channel limit",
+                    participant.as_str()
+                )));
             }
         }
 
@@ -528,7 +582,10 @@ impl Layer2Manager {
 
         // Update user channels
         for participant in participants {
-            self.user_channels.entry(participant).or_insert(HashSet::new()).insert(channel_id);
+            self.user_channels
+                .entry(participant)
+                .or_insert(HashSet::new())
+                .insert(channel_id);
         }
 
         log::info!("Created state channel {}", channel_id.to_hex());
@@ -545,11 +602,15 @@ impl Layer2Manager {
     pub fn get_stats(&self) -> Layer2Stats {
         Layer2Stats {
             total_payment_channels: self.payment_channels.len(),
-            active_payment_channels: self.payment_channels.values()
+            active_payment_channels: self
+                .payment_channels
+                .values()
                 .filter(|c| matches!(c.state, ChannelState::Active))
                 .count(),
             total_state_channels: self.state_channels.len(),
-            active_state_channels: self.state_channels.values()
+            active_state_channels: self
+                .state_channels
+                .values()
                 .filter(|c| matches!(c.state, ChannelState::Active))
                 .count(),
             total_locked_funds: self.calculate_total_locked_funds(),
@@ -558,12 +619,16 @@ impl Layer2Manager {
 
     /// Calculate total funds locked in channels
     fn calculate_total_locked_funds(&self) -> u64 {
-        let payment_funds: u64 = self.payment_channels.values()
+        let payment_funds: u64 = self
+            .payment_channels
+            .values()
             .filter(|c| !matches!(c.state, ChannelState::Closed))
             .map(|c| c.total_capacity)
             .sum();
 
-        let state_funds: u64 = self.state_channels.values()
+        let state_funds: u64 = self
+            .state_channels
+            .values()
             .filter(|c| !matches!(c.state, ChannelState::Closed))
             .map(|c| c.total_deposits())
             .sum();
@@ -572,31 +637,30 @@ impl Layer2Manager {
     }
 
     /// Validate off-chain transaction
-    pub fn validate_off_chain_transaction(
-        &self,
-        transaction: &OffChainTransaction,
-    ) -> Result<()> {
-        let channel = self.payment_channels.get(&transaction.channel_id)
+    pub fn validate_off_chain_transaction(&self, transaction: &OffChainTransaction) -> Result<()> {
+        let channel = self
+            .payment_channels
+            .get(&transaction.channel_id)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Channel not found".to_string()))?;
 
         // Check channel state
         if !matches!(channel.state, ChannelState::Active) {
             return Err(BlockchainError::InvalidTransaction(
-                "Channel is not active".to_string()
+                "Channel is not active".to_string(),
             ));
         }
 
         // Check sequence number
         if transaction.sequence_number <= channel.sequence_number {
             return Err(BlockchainError::InvalidTransaction(
-                "Sequence number too low".to_string()
+                "Sequence number too low".to_string(),
             ));
         }
 
         // Check balance preservation
         if transaction.new_balances[0] + transaction.new_balances[1] != channel.total_capacity {
             return Err(BlockchainError::InvalidTransaction(
-                "Balance update must preserve total capacity".to_string()
+                "Balance update must preserve total capacity".to_string(),
             ));
         }
 
@@ -604,7 +668,7 @@ impl Layer2Manager {
         // For now, assume signatures are valid if present
         if !transaction.is_fully_signed() {
             return Err(BlockchainError::InvalidTransaction(
-                "Transaction must be signed by both participants".to_string()
+                "Transaction must be signed by both participants".to_string(),
             ));
         }
 

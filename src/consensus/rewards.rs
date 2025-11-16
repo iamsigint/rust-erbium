@@ -1,4 +1,3 @@
-
 pub const ERB_DECIMALS: u128 = 1_0000_0000; // example 10^8 smallest units
 pub const INITIAL_BLOCK_REWARD: u128 = 15 * ERB_DECIMALS; // 15 ERB
 pub const HALVING_INTERVAL_BLOCKS: u64 = 1_051_200; // ~4 years @30s
@@ -15,7 +14,7 @@ impl RewardCalculator {
             blocks_per_year,
         }
     }
-    
+
     /// Legacy: Calculate annual reward for a validator based on stake
     pub fn calculate_annual_reward(&self, validator_stake: u64, total_stake: u64) -> u64 {
         if total_stake == 0 {
@@ -23,7 +22,7 @@ impl RewardCalculator {
         }
         (validator_stake * self.annual_emission) / total_stake
     }
-    
+
     /// Legacy: Calculate block reward for validator
     pub fn calculate_block_reward(&self, validator_stake: u64, total_stake: u64) -> u64 {
         if total_stake == 0 {
@@ -32,14 +31,14 @@ impl RewardCalculator {
         let emission_per_block = self.annual_emission / self.blocks_per_year;
         (validator_stake * emission_per_block) / total_stake
     }
-    
+
     /// Legacy: delegator rewards split
     pub fn calculate_delegator_rewards(
         &self,
         block_reward: u64,
         validator_stake: u64,
         delegator_stake: u64,
-        commission_rate: u8
+        commission_rate: u8,
     ) -> (u64, u64) {
         if validator_stake == 0 {
             return (0, 0);
@@ -71,7 +70,9 @@ impl RewardPolicy {
     pub fn reward_for_height(&self, height: u64) -> u128 {
         let halvings = height / self.halving_interval_blocks;
         // Shift-right per halving, saturating at zero after many halvings
-        self.initial_block_reward.checked_shr(halvings as u32).unwrap_or(0)
+        self.initial_block_reward
+            .checked_shr(halvings as u32)
+            .unwrap_or(0)
     }
 }
 

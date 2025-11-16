@@ -3,8 +3,8 @@
 //! This module provides fully homomorphic encryption (FHE) capabilities
 //! allowing computation on encrypted data without decryption.
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 
 /// Homomorphic encryption operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,7 +54,10 @@ impl HomomorphicEncryption {
     pub fn new(scheme: EncryptionScheme) -> Result<Self> {
         // In production, this would initialize actual FHE libraries
         // For now, return a stub implementation
-        log::info!("Initializing homomorphic encryption with scheme: {:?}", scheme);
+        log::info!(
+            "Initializing homomorphic encryption with scheme: {:?}",
+            scheme
+        );
 
         Ok(Self {
             scheme,
@@ -84,7 +87,11 @@ impl HomomorphicEncryption {
     }
 
     /// Perform computation on encrypted data
-    pub async fn compute_on_encrypted(&self, encrypted_data: &[u8], operation: FHEOperations) -> Result<Vec<u8>> {
+    pub async fn compute_on_encrypted(
+        &self,
+        encrypted_data: &[u8],
+        operation: FHEOperations,
+    ) -> Result<Vec<u8>> {
         // Mock computation - in production, use actual FHE operations
         log::info!("Performing homomorphic computation: {:?}", operation);
 

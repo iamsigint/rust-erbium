@@ -1,11 +1,11 @@
 // src/core/vm.rs
 
 use crate::core::{Address, Hash, State};
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 /// VM Configuration
 #[derive(Debug, Clone)]
@@ -33,15 +33,71 @@ impl Default for VMConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Opcode {
     // Stack operations
-    PUSH1 = 0x60, PUSH2, PUSH3, PUSH4, PUSH5, PUSH6, PUSH7, PUSH8, PUSH9, PUSH10,
-    PUSH11, PUSH12, PUSH13, PUSH14, PUSH15, PUSH16, PUSH17, PUSH18, PUSH19, PUSH20,
-    PUSH21, PUSH22, PUSH23, PUSH24, PUSH25, PUSH26, PUSH27, PUSH28, PUSH29, PUSH30,
-    PUSH31, PUSH32,
+    PUSH1 = 0x60,
+    PUSH2,
+    PUSH3,
+    PUSH4,
+    PUSH5,
+    PUSH6,
+    PUSH7,
+    PUSH8,
+    PUSH9,
+    PUSH10,
+    PUSH11,
+    PUSH12,
+    PUSH13,
+    PUSH14,
+    PUSH15,
+    PUSH16,
+    PUSH17,
+    PUSH18,
+    PUSH19,
+    PUSH20,
+    PUSH21,
+    PUSH22,
+    PUSH23,
+    PUSH24,
+    PUSH25,
+    PUSH26,
+    PUSH27,
+    PUSH28,
+    PUSH29,
+    PUSH30,
+    PUSH31,
+    PUSH32,
     POP = 0x50,
-    DUP1 = 0x80, DUP2, DUP3, DUP4, DUP5, DUP6, DUP7, DUP8, DUP9, DUP10,
-    DUP11, DUP12, DUP13, DUP14, DUP15, DUP16,
-    SWAP1 = 0x90, SWAP2, SWAP3, SWAP4, SWAP5, SWAP6, SWAP7, SWAP8, SWAP9, SWAP10,
-    SWAP11, SWAP12, SWAP13, SWAP14, SWAP15, SWAP16,
+    DUP1 = 0x80,
+    DUP2,
+    DUP3,
+    DUP4,
+    DUP5,
+    DUP6,
+    DUP7,
+    DUP8,
+    DUP9,
+    DUP10,
+    DUP11,
+    DUP12,
+    DUP13,
+    DUP14,
+    DUP15,
+    DUP16,
+    SWAP1 = 0x90,
+    SWAP2,
+    SWAP3,
+    SWAP4,
+    SWAP5,
+    SWAP6,
+    SWAP7,
+    SWAP8,
+    SWAP9,
+    SWAP10,
+    SWAP11,
+    SWAP12,
+    SWAP13,
+    SWAP14,
+    SWAP15,
+    SWAP16,
 
     // Arithmetic operations
     ADD = 0x01,
@@ -126,7 +182,11 @@ pub enum Opcode {
     SELFDESTRUCT,
 
     // Logging operations
-    LOG0 = 0xA0, LOG1, LOG2, LOG3, LOG4,
+    LOG0 = 0xA0,
+    LOG1,
+    LOG2,
+    LOG3,
+    LOG4,
 
     // Stop and invalid
     STOP = 0x00,
@@ -137,13 +197,28 @@ impl Opcode {
     pub fn gas_cost(&self) -> u64 {
         match self {
             // Very low cost operations
-            Opcode::STOP | Opcode::ADD | Opcode::SUB | Opcode::LT | Opcode::GT |
-            Opcode::EQ | Opcode::ISZERO | Opcode::AND | Opcode::OR | Opcode::XOR |
-            Opcode::NOT | Opcode::POP | Opcode::PC | Opcode::JUMPDEST => 1,
+            Opcode::STOP
+            | Opcode::ADD
+            | Opcode::SUB
+            | Opcode::LT
+            | Opcode::GT
+            | Opcode::EQ
+            | Opcode::ISZERO
+            | Opcode::AND
+            | Opcode::OR
+            | Opcode::XOR
+            | Opcode::NOT
+            | Opcode::POP
+            | Opcode::PC
+            | Opcode::JUMPDEST => 1,
 
             // Low cost operations
-            Opcode::MUL | Opcode::DIV | Opcode::SDIV | Opcode::MOD | Opcode::SMOD |
-            Opcode::BYTE => 3,
+            Opcode::MUL
+            | Opcode::DIV
+            | Opcode::SDIV
+            | Opcode::MOD
+            | Opcode::SMOD
+            | Opcode::BYTE => 3,
 
             // Mid cost operations
             Opcode::ADDMOD | Opcode::MULMOD => 5,
@@ -166,38 +241,97 @@ impl Opcode {
             Opcode::SHA3 => 30,
 
             // Environmental operations
-            Opcode::ADDRESS | Opcode::BALANCE | Opcode::ORIGIN | Opcode::CALLER |
-            Opcode::CALLVALUE | Opcode::CALLDATALOAD | Opcode::CALLDATASIZE |
-            Opcode::CODESIZE | Opcode::GASPRICE | Opcode::EXTCODESIZE |
-            Opcode::RETURNDATASIZE => 2,
+            Opcode::ADDRESS
+            | Opcode::BALANCE
+            | Opcode::ORIGIN
+            | Opcode::CALLER
+            | Opcode::CALLVALUE
+            | Opcode::CALLDATALOAD
+            | Opcode::CALLDATASIZE
+            | Opcode::CODESIZE
+            | Opcode::GASPRICE
+            | Opcode::EXTCODESIZE
+            | Opcode::RETURNDATASIZE => 2,
 
             // Block operations
             Opcode::BLOCKHASH => 20,
-            Opcode::COINBASE | Opcode::TIMESTAMP | Opcode::NUMBER |
-            Opcode::DIFFICULTY | Opcode::GASLIMIT | Opcode::CHAINID => 2,
+            Opcode::COINBASE
+            | Opcode::TIMESTAMP
+            | Opcode::NUMBER
+            | Opcode::DIFFICULTY
+            | Opcode::GASLIMIT
+            | Opcode::CHAINID => 2,
 
             // Jumps
             Opcode::JUMP | Opcode::JUMPI => 8,
 
             // Stack operations
-            Opcode::PUSH1 | Opcode::PUSH2 | Opcode::PUSH3 | Opcode::PUSH4 |
-            Opcode::PUSH5 | Opcode::PUSH6 | Opcode::PUSH7 | Opcode::PUSH8 |
-            Opcode::PUSH9 | Opcode::PUSH10 | Opcode::PUSH11 | Opcode::PUSH12 |
-            Opcode::PUSH13 | Opcode::PUSH14 | Opcode::PUSH15 | Opcode::PUSH16 |
-            Opcode::PUSH17 | Opcode::PUSH18 | Opcode::PUSH19 | Opcode::PUSH20 |
-            Opcode::PUSH21 | Opcode::PUSH22 | Opcode::PUSH23 | Opcode::PUSH24 |
-            Opcode::PUSH25 | Opcode::PUSH26 | Opcode::PUSH27 | Opcode::PUSH28 |
-            Opcode::PUSH29 | Opcode::PUSH30 | Opcode::PUSH31 | Opcode::PUSH32 => 3,
+            Opcode::PUSH1
+            | Opcode::PUSH2
+            | Opcode::PUSH3
+            | Opcode::PUSH4
+            | Opcode::PUSH5
+            | Opcode::PUSH6
+            | Opcode::PUSH7
+            | Opcode::PUSH8
+            | Opcode::PUSH9
+            | Opcode::PUSH10
+            | Opcode::PUSH11
+            | Opcode::PUSH12
+            | Opcode::PUSH13
+            | Opcode::PUSH14
+            | Opcode::PUSH15
+            | Opcode::PUSH16
+            | Opcode::PUSH17
+            | Opcode::PUSH18
+            | Opcode::PUSH19
+            | Opcode::PUSH20
+            | Opcode::PUSH21
+            | Opcode::PUSH22
+            | Opcode::PUSH23
+            | Opcode::PUSH24
+            | Opcode::PUSH25
+            | Opcode::PUSH26
+            | Opcode::PUSH27
+            | Opcode::PUSH28
+            | Opcode::PUSH29
+            | Opcode::PUSH30
+            | Opcode::PUSH31
+            | Opcode::PUSH32 => 3,
 
-            Opcode::DUP1 | Opcode::DUP2 | Opcode::DUP3 | Opcode::DUP4 |
-            Opcode::DUP5 | Opcode::DUP6 | Opcode::DUP7 | Opcode::DUP8 |
-            Opcode::DUP9 | Opcode::DUP10 | Opcode::DUP11 | Opcode::DUP12 |
-            Opcode::DUP13 | Opcode::DUP14 | Opcode::DUP15 | Opcode::DUP16 => 3,
+            Opcode::DUP1
+            | Opcode::DUP2
+            | Opcode::DUP3
+            | Opcode::DUP4
+            | Opcode::DUP5
+            | Opcode::DUP6
+            | Opcode::DUP7
+            | Opcode::DUP8
+            | Opcode::DUP9
+            | Opcode::DUP10
+            | Opcode::DUP11
+            | Opcode::DUP12
+            | Opcode::DUP13
+            | Opcode::DUP14
+            | Opcode::DUP15
+            | Opcode::DUP16 => 3,
 
-            Opcode::SWAP1 | Opcode::SWAP2 | Opcode::SWAP3 | Opcode::SWAP4 |
-            Opcode::SWAP5 | Opcode::SWAP6 | Opcode::SWAP7 | Opcode::SWAP8 |
-            Opcode::SWAP9 | Opcode::SWAP10 | Opcode::SWAP11 | Opcode::SWAP12 |
-            Opcode::SWAP13 | Opcode::SWAP14 | Opcode::SWAP15 | Opcode::SWAP16 => 3,
+            Opcode::SWAP1
+            | Opcode::SWAP2
+            | Opcode::SWAP3
+            | Opcode::SWAP4
+            | Opcode::SWAP5
+            | Opcode::SWAP6
+            | Opcode::SWAP7
+            | Opcode::SWAP8
+            | Opcode::SWAP9
+            | Opcode::SWAP10
+            | Opcode::SWAP11
+            | Opcode::SWAP12
+            | Opcode::SWAP13
+            | Opcode::SWAP14
+            | Opcode::SWAP15
+            | Opcode::SWAP16 => 3,
 
             // Logging
             Opcode::LOG0 | Opcode::LOG1 | Opcode::LOG2 | Opcode::LOG3 | Opcode::LOG4 => 375,
@@ -271,7 +405,9 @@ impl Memory {
     /// Read 32 bytes from memory
     pub fn read(&mut self, offset: usize) -> Result<StackValue> {
         if offset + 32 > self.max_size {
-            return Err(BlockchainError::VM("Memory access out of bounds".to_string()));
+            return Err(BlockchainError::VM(
+                "Memory access out of bounds".to_string(),
+            ));
         }
 
         if offset >= self.data.len() {
@@ -287,7 +423,9 @@ impl Memory {
     /// Write 32 bytes to memory
     pub fn write(&mut self, offset: usize, value: StackValue) -> Result<()> {
         if offset + 32 > self.max_size {
-            return Err(BlockchainError::VM("Memory access out of bounds".to_string()));
+            return Err(BlockchainError::VM(
+                "Memory access out of bounds".to_string(),
+            ));
         }
 
         if offset + 32 > self.data.len() {
@@ -301,7 +439,9 @@ impl Memory {
     /// Copy data to memory
     pub fn copy(&mut self, dest_offset: usize, src: &[u8]) -> Result<()> {
         if dest_offset + src.len() > self.max_size {
-            return Err(BlockchainError::VM("Memory access out of bounds".to_string()));
+            return Err(BlockchainError::VM(
+                "Memory access out of bounds".to_string(),
+            ));
         }
 
         if dest_offset + src.len() > self.data.len() {
@@ -355,24 +495,30 @@ impl ContractStorage {
 /// VM Execution Context
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
-    pub address: Address,        // Contract address
-    pub caller: Address,         // Caller address
-    pub origin: Address,         // Original transaction sender
-    pub value: u64,             // Value sent with call
-    pub data: Vec<u8>,          // Call data
-    pub gas_price: u64,         // Gas price
-    pub gas_limit: u64,         // Gas limit
-    pub block_number: u64,      // Current block number
-    pub block_timestamp: u64,   // Current block timestamp
-    pub chain_id: u64,          // Chain ID
+    pub address: Address,     // Contract address
+    pub caller: Address,      // Caller address
+    pub origin: Address,      // Original transaction sender
+    pub value: u64,           // Value sent with call
+    pub data: Vec<u8>,        // Call data
+    pub gas_price: u64,       // Gas price
+    pub gas_limit: u64,       // Gas limit
+    pub block_number: u64,    // Current block number
+    pub block_timestamp: u64, // Current block timestamp
+    pub chain_id: u64,        // Chain ID
 }
 
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
-            address: Address::new_unchecked("0x0000000000000000000000000000000000000000".to_string()),
-            caller: Address::new_unchecked("0x0000000000000000000000000000000000000000".to_string()),
-            origin: Address::new_unchecked("0x0000000000000000000000000000000000000000".to_string()),
+            address: Address::new_unchecked(
+                "0x0000000000000000000000000000000000000000".to_string(),
+            ),
+            caller: Address::new_unchecked(
+                "0x0000000000000000000000000000000000000000".to_string(),
+            ),
+            origin: Address::new_unchecked(
+                "0x0000000000000000000000000000000000000000".to_string(),
+            ),
             value: 0,
             data: Vec::new(),
             gas_price: 1,
@@ -511,30 +657,78 @@ impl VirtualMachine {
                 Opcode::MOD => self.execute_mod(&mut stack)?,
                 Opcode::POP => self.execute_pop(&mut stack)?,
                 // PUSH operations
-                Opcode::PUSH1 | Opcode::PUSH2 | Opcode::PUSH3 | Opcode::PUSH4 |
-                Opcode::PUSH5 | Opcode::PUSH6 | Opcode::PUSH7 | Opcode::PUSH8 |
-                Opcode::PUSH9 | Opcode::PUSH10 | Opcode::PUSH11 | Opcode::PUSH12 |
-                Opcode::PUSH13 | Opcode::PUSH14 | Opcode::PUSH15 | Opcode::PUSH16 |
-                Opcode::PUSH17 | Opcode::PUSH18 | Opcode::PUSH19 | Opcode::PUSH20 |
-                Opcode::PUSH21 | Opcode::PUSH22 | Opcode::PUSH23 | Opcode::PUSH24 |
-                Opcode::PUSH25 | Opcode::PUSH26 | Opcode::PUSH27 | Opcode::PUSH28 |
-                Opcode::PUSH29 | Opcode::PUSH30 | Opcode::PUSH31 | Opcode::PUSH32 => {
+                Opcode::PUSH1
+                | Opcode::PUSH2
+                | Opcode::PUSH3
+                | Opcode::PUSH4
+                | Opcode::PUSH5
+                | Opcode::PUSH6
+                | Opcode::PUSH7
+                | Opcode::PUSH8
+                | Opcode::PUSH9
+                | Opcode::PUSH10
+                | Opcode::PUSH11
+                | Opcode::PUSH12
+                | Opcode::PUSH13
+                | Opcode::PUSH14
+                | Opcode::PUSH15
+                | Opcode::PUSH16
+                | Opcode::PUSH17
+                | Opcode::PUSH18
+                | Opcode::PUSH19
+                | Opcode::PUSH20
+                | Opcode::PUSH21
+                | Opcode::PUSH22
+                | Opcode::PUSH23
+                | Opcode::PUSH24
+                | Opcode::PUSH25
+                | Opcode::PUSH26
+                | Opcode::PUSH27
+                | Opcode::PUSH28
+                | Opcode::PUSH29
+                | Opcode::PUSH30
+                | Opcode::PUSH31
+                | Opcode::PUSH32 => {
                     let size = (opcode - Opcode::PUSH1 as u8 + 1) as usize;
                     self.execute_push(&mut stack, &contract.bytecode, &mut pc, size)?;
                 }
                 // DUP operations
-                Opcode::DUP1 | Opcode::DUP2 | Opcode::DUP3 | Opcode::DUP4 |
-                Opcode::DUP5 | Opcode::DUP6 | Opcode::DUP7 | Opcode::DUP8 |
-                Opcode::DUP9 | Opcode::DUP10 | Opcode::DUP11 | Opcode::DUP12 |
-                Opcode::DUP13 | Opcode::DUP14 | Opcode::DUP15 | Opcode::DUP16 => {
+                Opcode::DUP1
+                | Opcode::DUP2
+                | Opcode::DUP3
+                | Opcode::DUP4
+                | Opcode::DUP5
+                | Opcode::DUP6
+                | Opcode::DUP7
+                | Opcode::DUP8
+                | Opcode::DUP9
+                | Opcode::DUP10
+                | Opcode::DUP11
+                | Opcode::DUP12
+                | Opcode::DUP13
+                | Opcode::DUP14
+                | Opcode::DUP15
+                | Opcode::DUP16 => {
                     let depth = (opcode - Opcode::DUP1 as u8 + 1) as usize;
                     self.execute_dup(&mut stack, depth)?;
                 }
                 // SWAP operations
-                Opcode::SWAP1 | Opcode::SWAP2 | Opcode::SWAP3 | Opcode::SWAP4 |
-                Opcode::SWAP5 | Opcode::SWAP6 | Opcode::SWAP7 | Opcode::SWAP8 |
-                Opcode::SWAP9 | Opcode::SWAP10 | Opcode::SWAP11 | Opcode::SWAP12 |
-                Opcode::SWAP13 | Opcode::SWAP14 | Opcode::SWAP15 | Opcode::SWAP16 => {
+                Opcode::SWAP1
+                | Opcode::SWAP2
+                | Opcode::SWAP3
+                | Opcode::SWAP4
+                | Opcode::SWAP5
+                | Opcode::SWAP6
+                | Opcode::SWAP7
+                | Opcode::SWAP8
+                | Opcode::SWAP9
+                | Opcode::SWAP10
+                | Opcode::SWAP11
+                | Opcode::SWAP12
+                | Opcode::SWAP13
+                | Opcode::SWAP14
+                | Opcode::SWAP15
+                | Opcode::SWAP16 => {
                     let depth = (opcode - Opcode::SWAP1 as u8 + 1) as usize;
                     self.execute_swap(&mut stack, depth)?;
                 }
@@ -547,7 +741,10 @@ impl VirtualMachine {
                 Opcode::PC => self.execute_pc(&mut stack, pc)?,
                 Opcode::JUMPDEST => {} // No operation
                 Opcode::ADDRESS => self.execute_address(&mut stack, &context.address)?,
-                Opcode::BALANCE => self.execute_balance(&mut stack, &context.address, &self.state).await?,
+                Opcode::BALANCE => {
+                    self.execute_balance(&mut stack, &context.address, &self.state)
+                        .await?
+                }
                 Opcode::CALLER => self.execute_caller(&mut stack, &context.caller)?,
                 Opcode::CALLVALUE => self.execute_callvalue(&mut stack, context.value)?,
                 Opcode::CALLDATALOAD => self.execute_calldataload(&mut stack, &context.data)?,
@@ -560,7 +757,13 @@ impl VirtualMachine {
                 // LOG operations
                 Opcode::LOG0 | Opcode::LOG1 | Opcode::LOG2 | Opcode::LOG3 | Opcode::LOG4 => {
                     let topics_count = (opcode - Opcode::LOG0 as u8) as usize;
-                    self.execute_log(&mut stack, &mut memory, &context.address, topics_count, &mut logs)?;
+                    self.execute_log(
+                        &mut stack,
+                        &mut memory,
+                        &context.address,
+                        topics_count,
+                        &mut logs,
+                    )?;
                 }
                 Opcode::RETURN => {
                     let result = self.execute_return(&mut stack, &memory)?;
@@ -635,38 +838,57 @@ impl VirtualMachine {
             0xF3 => Ok(Opcode::RETURN),
             0xFD => Ok(Opcode::REVERT),
             0xFF => Ok(Opcode::SELFDESTRUCT),
-            _ => Err(BlockchainError::VM(format!("Unknown opcode: 0x{:02x}", byte))),
+            _ => Err(BlockchainError::VM(format!(
+                "Unknown opcode: 0x{:02x}",
+                byte
+            ))),
         }
     }
 
     // Stack operations
     fn execute_add(&self, stack: &mut Vec<StackValue>) -> Result<()> {
-        let a = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let b = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let a = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let b = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let result = StackValue::from_u64(a.to_u64().wrapping_add(b.to_u64()));
         stack.push(result);
         Ok(())
     }
 
     fn execute_mul(&self, stack: &mut Vec<StackValue>) -> Result<()> {
-        let a = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let b = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let a = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let b = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let result = StackValue::from_u64(a.to_u64().wrapping_mul(b.to_u64()));
         stack.push(result);
         Ok(())
     }
 
     fn execute_sub(&self, stack: &mut Vec<StackValue>) -> Result<()> {
-        let a = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let b = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let a = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let b = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let result = StackValue::from_u64(a.to_u64().wrapping_sub(b.to_u64()));
         stack.push(result);
         Ok(())
     }
 
     fn execute_div(&self, stack: &mut Vec<StackValue>) -> Result<()> {
-        let a = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let b = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let a = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let b = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let divisor = b.to_u64();
         let result = if divisor == 0 {
             StackValue::zero()
@@ -678,8 +900,12 @@ impl VirtualMachine {
     }
 
     fn execute_mod(&self, stack: &mut Vec<StackValue>) -> Result<()> {
-        let a = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let b = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let a = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let b = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let divisor = b.to_u64();
         let result = if divisor == 0 {
             StackValue::zero()
@@ -691,11 +917,19 @@ impl VirtualMachine {
     }
 
     fn execute_pop(&self, stack: &mut Vec<StackValue>) -> Result<()> {
-        stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         Ok(())
     }
 
-    fn execute_push(&self, stack: &mut Vec<StackValue>, bytecode: &[u8], pc: &mut usize, size: usize) -> Result<()> {
+    fn execute_push(
+        &self,
+        stack: &mut Vec<StackValue>,
+        bytecode: &[u8],
+        pc: &mut usize,
+        size: usize,
+    ) -> Result<()> {
         if *pc + size > bytecode.len() {
             return Err(BlockchainError::VM("Push data out of bounds".to_string()));
         }
@@ -725,37 +959,60 @@ impl VirtualMachine {
 
     // Memory operations
     fn execute_mload(&self, stack: &mut Vec<StackValue>, memory: &mut Memory) -> Result<()> {
-        let offset = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let offset = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let value = memory.read(offset.to_u64() as usize)?;
         stack.push(value);
         Ok(())
     }
 
     fn execute_mstore(&self, stack: &mut Vec<StackValue>, memory: &mut Memory) -> Result<()> {
-        let offset = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let value = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let offset = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let value = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         memory.write(offset.to_u64() as usize, value)?;
         Ok(())
     }
 
     // Storage operations
     fn execute_sload(&self, stack: &mut Vec<StackValue>, storage: &ContractStorage) -> Result<()> {
-        let key = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let key = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let value = storage.load(key);
         stack.push(value);
         Ok(())
     }
 
-    fn execute_sstore(&self, stack: &mut Vec<StackValue>, storage: &mut ContractStorage) -> Result<()> {
-        let key = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let value = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+    fn execute_sstore(
+        &self,
+        stack: &mut Vec<StackValue>,
+        storage: &mut ContractStorage,
+    ) -> Result<()> {
+        let key = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let value = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         storage.store(key, value);
         Ok(())
     }
 
     // Control flow
-    fn execute_jump(&self, stack: &mut Vec<StackValue>, pc: &mut usize, bytecode: &[u8]) -> Result<()> {
-        let destination = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+    fn execute_jump(
+        &self,
+        stack: &mut Vec<StackValue>,
+        pc: &mut usize,
+        bytecode: &[u8],
+    ) -> Result<()> {
+        let destination = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let dest_pc = destination.to_u64() as usize;
 
         if dest_pc >= bytecode.len() || bytecode[dest_pc] != Opcode::JUMPDEST as u8 {
@@ -766,9 +1023,18 @@ impl VirtualMachine {
         Ok(())
     }
 
-    fn execute_jumpi(&self, stack: &mut Vec<StackValue>, pc: &mut usize, bytecode: &[u8]) -> Result<()> {
-        let destination = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let condition = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+    fn execute_jumpi(
+        &self,
+        stack: &mut Vec<StackValue>,
+        pc: &mut usize,
+        bytecode: &[u8],
+    ) -> Result<()> {
+        let destination = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let condition = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
 
         if condition.to_u64() != 0 {
             let dest_pc = destination.to_u64() as usize;
@@ -792,7 +1058,12 @@ impl VirtualMachine {
         Ok(())
     }
 
-    async fn execute_balance(&self, stack: &mut Vec<StackValue>, address: &Address, state: &Arc<RwLock<State>>) -> Result<()> {
+    async fn execute_balance(
+        &self,
+        stack: &mut Vec<StackValue>,
+        address: &Address,
+        state: &Arc<RwLock<State>>,
+    ) -> Result<()> {
         let state_read = state.read().await;
         let balance = state_read.get_balance(address).unwrap_or(0);
         stack.push(StackValue::from_u64(balance));
@@ -811,7 +1082,9 @@ impl VirtualMachine {
     }
 
     fn execute_calldataload(&self, stack: &mut Vec<StackValue>, data: &[u8]) -> Result<()> {
-        let offset = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let offset = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
         let offset_usize = offset.to_u64() as usize;
 
         let mut bytes = [0u8; 32];
@@ -854,9 +1127,20 @@ impl VirtualMachine {
     }
 
     // Logging
-    fn execute_log(&self, stack: &mut Vec<StackValue>, memory: &mut Memory, address: &Address, topics_count: usize, logs: &mut Vec<Log>) -> Result<()> {
-        let offset = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let size = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+    fn execute_log(
+        &self,
+        stack: &mut Vec<StackValue>,
+        memory: &mut Memory,
+        address: &Address,
+        topics_count: usize,
+        logs: &mut Vec<Log>,
+    ) -> Result<()> {
+        let offset = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let size = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
 
         let offset_usize = offset.to_u64() as usize;
         let size_usize = size.to_u64() as usize;
@@ -867,7 +1151,9 @@ impl VirtualMachine {
 
         let mut topics = Vec::new();
         for _ in 0..topics_count {
-            let topic = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+            let topic = stack
+                .pop()
+                .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
             topics.push(Hash::from_bytes(*topic.as_bytes()));
         }
 
@@ -879,8 +1165,12 @@ impl VirtualMachine {
 
     // Return
     fn execute_return(&self, stack: &mut Vec<StackValue>, memory: &Memory) -> Result<Vec<u8>> {
-        let offset = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
-        let size = stack.pop().ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let offset = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
+        let size = stack
+            .pop()
+            .ok_or_else(|| BlockchainError::VM("Stack underflow".to_string()))?;
 
         let offset_usize = offset.to_u64() as usize;
         let size_usize = size.to_u64() as usize;
@@ -932,7 +1222,9 @@ impl ContractManager {
             log::info!("Deployed contract at {}", contract_address.as_str());
             Ok(contract_address)
         } else {
-            Err(BlockchainError::VM("Contract deployment failed".to_string()))
+            Err(BlockchainError::VM(
+                "Contract deployment failed".to_string(),
+            ))
         }
     }
 
@@ -942,7 +1234,9 @@ impl ContractManager {
         address: &Address,
         context: &ExecutionContext,
     ) -> Result<ExecutionResult> {
-        let contract = self.contracts.get_mut(address)
+        let contract = self
+            .contracts
+            .get_mut(address)
             .ok_or_else(|| BlockchainError::VM("Contract not found".to_string()))?;
 
         self.vm.execute(contract, context).await
@@ -958,8 +1252,6 @@ impl ContractManager {
         self.contracts.values().collect()
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -978,20 +1270,24 @@ mod tests {
         let bytecode = vec![
             0x60, 0x42, // PUSH1 0x42
             0x60, 0x00, // PUSH1 0x00
-            0x52,       // MSTORE
+            0x52, // MSTORE
             0x60, 0x20, // PUSH1 0x20
             0x60, 0x00, // PUSH1 0x00
-            0xF3,       // RETURN
+            0xF3, // RETURN
         ];
 
-        let deployer = Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
+        let deployer =
+            Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
         let context = ExecutionContext {
             caller: deployer.clone(),
             origin: deployer.clone(),
             ..Default::default()
         };
 
-        let contract_address = manager.deploy_contract(bytecode, deployer, &context).await.unwrap();
+        let contract_address = manager
+            .deploy_contract(bytecode, deployer, &context)
+            .await
+            .unwrap();
 
         let contract = manager.get_contract(&contract_address).unwrap();
         assert_eq!(contract.bytecode.len(), 10);
@@ -1008,22 +1304,26 @@ mod tests {
         let bytecode = vec![
             0x60, 0x05, // PUSH1 5
             0x60, 0x03, // PUSH1 3
-            0x01,       // ADD
+            0x01, // ADD
             0x60, 0x00, // PUSH1 0
-            0x52,       // MSTORE
+            0x52, // MSTORE
             0x60, 0x20, // PUSH1 32
             0x60, 0x00, // PUSH1 0
-            0xF3,       // RETURN
+            0xF3, // RETURN
         ];
 
-        let deployer = Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
+        let deployer =
+            Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
         let context = ExecutionContext {
             caller: deployer.clone(),
             origin: deployer.clone(),
             ..Default::default()
         };
 
-        let contract_address = manager.deploy_contract(bytecode, deployer.clone(), &context).await.unwrap();
+        let contract_address = manager
+            .deploy_contract(bytecode, deployer.clone(), &context)
+            .await
+            .unwrap();
 
         // Call contract
         let call_context = ExecutionContext {
@@ -1033,7 +1333,10 @@ mod tests {
             ..Default::default()
         };
 
-        let result = manager.call_contract(&contract_address, &call_context).await.unwrap();
+        let result = manager
+            .call_contract(&contract_address, &call_context)
+            .await
+            .unwrap();
         assert!(result.success);
 
         // Result should be 8 (5 + 3)
@@ -1050,7 +1353,7 @@ mod tests {
 
         let mut contract = Contract::new(
             Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string()),
-            vec![0x60, 0x42, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3] // PUSH1 0x42, PUSH1 0x00, MSTORE, PUSH1 0x20, PUSH1 0x00, RETURN
+            vec![0x60, 0x42, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3], // PUSH1 0x42, PUSH1 0x00, MSTORE, PUSH1 0x20, PUSH1 0x00, RETURN
         );
 
         let context = ExecutionContext::default();

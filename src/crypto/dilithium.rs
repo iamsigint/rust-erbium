@@ -1,18 +1,14 @@
 // src/crypto/dilithium.rs
 
+use crate::utils::error::{BlockchainError, Result};
 use pqcrypto_dilithium::dilithium3::{
-    detached_sign, verify_detached_signature, keypair, 
-    public_key_bytes, secret_key_bytes, signature_bytes,
-    PublicKey as DilithiumPK,
-    SecretKey as DilithiumSK, 
-    DetachedSignature as DilithiumSig
+    detached_sign, keypair, public_key_bytes, secret_key_bytes, signature_bytes,
+    verify_detached_signature, DetachedSignature as DilithiumSig, PublicKey as DilithiumPK,
+    SecretKey as DilithiumSK,
 };
 use pqcrypto_traits::sign::{
-    PublicKey as PubKeyTrait, 
-    SecretKey as SecKeyTrait, 
-    DetachedSignature as DetachedSigTrait
+    DetachedSignature as DetachedSigTrait, PublicKey as PubKeyTrait, SecretKey as SecKeyTrait,
 };
-use crate::utils::error::{BlockchainError, Result};
 
 pub struct Dilithium;
 
@@ -25,40 +21,40 @@ impl Dilithium {
             secret_key.as_bytes().to_vec(),
         ))
     }
-    
+
     /// Sign a message with private key
     pub fn sign(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>> {
         let _sk = DilithiumSK::from_bytes(private_key)
             .map_err(|e| BlockchainError::Crypto(format!("Invalid private key: {}", e)))?;
-            
+
         let signature = detached_sign(message, &_sk);
         Ok(signature.as_bytes().to_vec())
     }
-    
+
     /// Verify a signature with public key
     pub fn verify(public_key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool> {
         let pk = DilithiumPK::from_bytes(public_key)
             .map_err(|e| BlockchainError::Crypto(format!("Invalid public key: {}", e)))?;
-            
+
         let sig = DilithiumSig::from_bytes(signature)
             .map_err(|e| BlockchainError::Crypto(format!("Invalid signature: {}", e)))?;
-            
+
         match verify_detached_signature(&sig, message, &pk) {
             Ok(()) => Ok(true),
             Err(_) => Ok(false),
         }
     }
-    
+
     /// Get public key size in bytes
     pub fn public_key_size() -> usize {
         public_key_bytes()
     }
-    
+
     /// Get private key size in bytes
     pub fn private_key_size() -> usize {
         secret_key_bytes()
     }
-    
+
     /// Get signature size in bytes
     pub fn signature_size() -> usize {
         signature_bytes()
@@ -96,22 +92,22 @@ impl DilithiumKeypair {
             secret_key: private_key.to_vec(),
         })
     }
-    
+
     /// Signs a message using the instance's secret key
     pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
         Dilithium::sign(&self.secret_key, message)
     }
-    
+
     /// Verifies a message using the instance's public key
     pub fn verify(&self, message: &[u8], signature: &[u8]) -> Result<bool> {
         Dilithium::verify(&self.public_key, message, signature)
     }
-    
+
     /// Returns a slice to the public key bytes
     pub fn public_key_bytes(&self) -> &[u8] {
         &self.public_key
     }
-    
+
     /// Returns a slice to the secret key bytes
     pub fn secret_key_bytes(&self) -> &[u8] {
         &self.secret_key

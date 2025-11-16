@@ -1,14 +1,14 @@
 // src/network/p2p.rs
 
-use libp2p::{
-    identity, Swarm, PeerId, Multiaddr,
-    swarm::{NetworkBehaviour, SwarmEvent, ConnectionDenied, ToSwarm},
-    ping, tcp, dns, Transport,
-};
-use crate::utils::error::{Result, BlockchainError};
-use tokio::sync::mpsc;
-use std::collections::HashSet;
+use crate::utils::error::{BlockchainError, Result};
 use futures::StreamExt;
+use libp2p::{
+    dns, identity, ping,
+    swarm::{ConnectionDenied, NetworkBehaviour, SwarmEvent, ToSwarm},
+    tcp, Multiaddr, PeerId, Swarm, Transport,
+};
+use std::collections::HashSet;
+use tokio::sync::mpsc;
 
 pub struct NodeBehaviour {
     pub ping: ping::Behaviour,
@@ -34,7 +34,12 @@ impl NetworkBehaviour for NodeBehaviour {
         _local_addr: &Multiaddr,
         _remote_addr: &Multiaddr,
     ) -> std::result::Result<Self::ConnectionHandler, ConnectionDenied> {
-        self.ping.handle_established_inbound_connection(_connection_id, _peer_id, _local_addr, _remote_addr)
+        self.ping.handle_established_inbound_connection(
+            _connection_id,
+            _peer_id,
+            _local_addr,
+            _remote_addr,
+        )
     }
 
     fn handle_pending_outbound_connection(
@@ -54,7 +59,12 @@ impl NetworkBehaviour for NodeBehaviour {
         _addr: &Multiaddr,
         _role_override: libp2p::core::Endpoint,
     ) -> std::result::Result<Self::ConnectionHandler, ConnectionDenied> {
-        self.ping.handle_established_outbound_connection(_connection_id, _peer_id, _addr, _role_override)
+        self.ping.handle_established_outbound_connection(
+            _connection_id,
+            _peer_id,
+            _addr,
+            _role_override,
+        )
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {
@@ -67,17 +77,23 @@ impl NetworkBehaviour for NodeBehaviour {
         connection_id: libp2p::swarm::ConnectionId,
         event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::ToBehaviour,
     ) {
-        self.ping.on_connection_handler_event(peer_id, connection_id, event);
+        self.ping
+            .on_connection_handler_event(peer_id, connection_id, event);
     }
 
     fn poll(
         &mut self,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<ToSwarm<Self::ToSwarm, <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::FromBehaviour>> {
+    ) -> std::task::Poll<
+        ToSwarm<
+            Self::ToSwarm,
+            <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::FromBehaviour,
+        >,
+    > {
         // Delegate to inner ping behaviour; map event type if needed
-        self.ping.poll(cx).map(|poll| {
-            poll.map_out(NodeBehaviourEvent::Ping)
-        })
+        self.ping
+            .poll(cx)
+            .map(|poll| poll.map_out(NodeBehaviourEvent::Ping))
     }
 }
 
@@ -106,13 +122,16 @@ impl P2PNode {
 
         // Create transport with TCP and DNS
         let tcp_transport = tcp::tokio::Transport::new(tcp::Config::default());
-        let dns_transport = dns::tokio::Transport::system(tcp_transport)
-            .map_err(|e| BlockchainError::Network(format!("DNS transport creation failed: {}", e)))?;
+        let dns_transport = dns::tokio::Transport::system(tcp_transport).map_err(|e| {
+            BlockchainError::Network(format!("DNS transport creation failed: {}", e))
+        })?;
 
         let transport = dns_transport
             .upgrade(libp2p::core::upgrade::Version::V1)
-            .authenticate(libp2p::noise::Config::new(&local_key)
-                .map_err(|e| BlockchainError::Network(format!("Noise config failed: {}", e)))?)
+            .authenticate(
+                libp2p::noise::Config::new(&local_key)
+                    .map_err(|e| BlockchainError::Network(format!("Noise config failed: {}", e)))?,
+            )
             .multiplex(libp2p::yamux::Config::default())
             .boxed();
 
@@ -121,7 +140,12 @@ impl P2PNode {
             ping: ping_behaviour,
         };
 
-        let swarm = Swarm::new(transport, behaviour, local_peer_id, libp2p::swarm::Config::with_tokio_executor());
+        let swarm = Swarm::new(
+            transport,
+            behaviour,
+            local_peer_id,
+            libp2p::swarm::Config::with_tokio_executor(),
+        );
 
         let (_message_sender, message_receiver) = mpsc::unbounded_channel();
 
@@ -139,10 +163,15 @@ impl P2PNode {
                     log::info!("Started listening on {}", addr);
                     Ok(())
                 }
-                Err(e) => Err(BlockchainError::Network(format!("Failed to listen on address: {}", e))),
+                Err(e) => Err(BlockchainError::Network(format!(
+                    "Failed to listen on address: {}",
+                    e
+                ))),
             }
         } else {
-            Err(BlockchainError::Network("Swarm not initialized".to_string()))
+            Err(BlockchainError::Network(
+                "Swarm not initialized".to_string(),
+            ))
         }
     }
 
@@ -153,10 +182,15 @@ impl P2PNode {
                     log::info!("Dialing peer at {}", peer_addr);
                     Ok(())
                 }
-                Err(e) => Err(BlockchainError::Network(format!("Failed to dial peer: {}", e))),
+                Err(e) => Err(BlockchainError::Network(format!(
+                    "Failed to dial peer: {}",
+                    e
+                ))),
             }
         } else {
-            Err(BlockchainError::Network("Swarm not initialized".to_string()))
+            Err(BlockchainError::Network(
+                "Swarm not initialized".to_string(),
+            ))
         }
     }
 
@@ -166,16 +200,23 @@ impl P2PNode {
     }
 
     pub async fn broadcast_transaction(&mut self, _tx_data: Vec<u8>) -> Result<()> {
-        log::info!("Broadcasting transaction to {} peers", self.connected_peers.len());
+        log::info!(
+            "Broadcasting transaction to {} peers",
+            self.connected_peers.len()
+        );
         Ok(())
     }
 
     pub async fn run(&mut self) -> Result<()> {
         let mut swarm = match self.swarm.take() {
             Some(swarm) => swarm,
-            None => return Err(BlockchainError::Network("Swarm not initialized".to_string())),
+            None => {
+                return Err(BlockchainError::Network(
+                    "Swarm not initialized".to_string(),
+                ))
+            }
         };
-        
+
         loop {
             tokio::select! {
                 event = swarm.select_next_some() => {
@@ -190,12 +231,15 @@ impl P2PNode {
                 }
             }
         }
-        
+
         self.swarm = Some(swarm);
         Ok(())
     }
 
-    async fn handle_swarm_event(&mut self, event: SwarmEvent<<NodeBehaviour as NetworkBehaviour>::ToSwarm>) -> Result<()> {
+    async fn handle_swarm_event(
+        &mut self,
+        event: SwarmEvent<<NodeBehaviour as NetworkBehaviour>::ToSwarm>,
+    ) -> Result<()> {
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 log::info!("Listening on {}", address);

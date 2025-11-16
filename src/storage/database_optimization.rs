@@ -6,11 +6,11 @@
 //! including connection pooling, query optimization, indexing, and performance tuning.
 
 use crate::utils::error::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::time::Instant;
+use tokio::sync::RwLock;
 
 /// Production database configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,7 +147,11 @@ impl DatabaseOptimizer {
 
         // Adjust write buffer based on available memory
         let memory_per_buffer = 1024 * 1024; // 1MB per buffer entry estimate
-        optimized.write_buffer_size = ((system_info.available_memory_gb * 1024.0 * 1024.0 * 1024.0) as usize / memory_per_buffer / 10).max(1000);
+        optimized.write_buffer_size = ((system_info.available_memory_gb * 1024.0 * 1024.0 * 1024.0)
+            as usize
+            / memory_per_buffer
+            / 10)
+            .max(1000);
 
         // Optimize sync modes based on workload
         optimized.wal_sync_mode = if system_info.is_ssd {
@@ -183,8 +187,11 @@ impl DatabaseOptimizer {
             }
         }
 
-        log::info!("Query optimization completed: {} indexes created, {} queries optimized",
-                  result.created_indexes.len(), result.optimized_queries.len());
+        log::info!(
+            "Query optimization completed: {} indexes created, {} queries optimized",
+            result.created_indexes.len(),
+            result.optimized_queries.len()
+        );
 
         Ok(result)
     }
@@ -198,19 +205,26 @@ impl DatabaseOptimizer {
 
         // Suggest column reorganization
         if data_distribution.hot_data_ratio > 0.8 {
-            result.recommendations.push("Consider increasing column count for better data distribution".to_string());
+            result
+                .recommendations
+                .push("Consider increasing column count for better data distribution".to_string());
         }
 
         // Suggest compression settings
         if data_distribution.compression_ratio < 2.0 {
-            result.recommendations.push("Data compression ratio is low, consider different algorithm".to_string());
+            result
+                .recommendations
+                .push("Data compression ratio is low, consider different algorithm".to_string());
         }
 
         // Calculate optimal settings
         result.optimal_columns = self.calculate_optimal_columns(&data_distribution);
         result.optimal_compression = self.select_optimal_compression(&data_distribution);
 
-        log::info!("Storage optimization completed with {} recommendations", result.recommendations.len());
+        log::info!(
+            "Storage optimization completed with {} recommendations",
+            result.recommendations.len()
+        );
 
         Ok(result)
     }
@@ -246,7 +260,10 @@ impl DatabaseOptimizer {
             total_time_ms: total_time.as_millis() as u64,
         };
 
-        log::info!("Database maintenance completed in {:.2}s", total_time.as_secs_f64());
+        log::info!(
+            "Database maintenance completed in {:.2}s",
+            total_time.as_secs_f64()
+        );
 
         Ok(result)
     }
@@ -287,22 +304,28 @@ impl DatabaseOptimizer {
         if stats.query_count > 0 || !stats.snapshots.is_empty() {
             // Analyze cache performance
             if stats.cache_hit_ratio() < 0.8 && (stats.cache_hits + stats.cache_misses) > 0 {
-                recommendations.push("Cache hit ratio is low, consider increasing cache size".to_string());
+                recommendations
+                    .push("Cache hit ratio is low, consider increasing cache size".to_string());
             }
 
             // Analyze query performance
             if stats.avg_query_latency_ms() > 100.0 && stats.query_count > 0 {
-                recommendations.push("Average query latency is high, consider query optimization".to_string());
+                recommendations
+                    .push("Average query latency is high, consider query optimization".to_string());
             }
 
             // Analyze memory usage
-            if stats.memory_usage_mb > 2048.0 { // 2GB
-                recommendations.push("Memory usage is high, consider memory optimization".to_string());
+            if stats.memory_usage_mb > 2048.0 {
+                // 2GB
+                recommendations
+                    .push("Memory usage is high, consider memory optimization".to_string());
             }
 
             // Analyze disk usage
-            if stats.disk_usage_gb > 100.0 { // 100GB
-                recommendations.push("Disk usage is high, consider data pruning or compression".to_string());
+            if stats.disk_usage_gb > 100.0 {
+                // 100GB
+                recommendations
+                    .push("Disk usage is high, consider data pruning or compression".to_string());
             }
         }
 
@@ -533,8 +556,8 @@ impl PerformanceStats {
             };
 
             if latest.timestamp > previous.timestamp {
-                (latest.queries_per_second * (latest.timestamp - previous.timestamp) as f64) /
-                (latest.timestamp - previous.timestamp) as f64
+                (latest.queries_per_second * (latest.timestamp - previous.timestamp) as f64)
+                    / (latest.timestamp - previous.timestamp) as f64
             } else {
                 0.0
             }

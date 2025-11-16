@@ -1,9 +1,9 @@
 // src/api/rpc.rs
 
-use jsonrpc_core::{IoHandler, Result, Value};
+use crate::core::{Address, Block, Blockchain, Transaction};
 use crate::node::config::NodeConfig;
+use jsonrpc_core::{IoHandler, Result, Value};
 use jsonrpc_derive::rpc;
-use crate::core::{Blockchain, Block, Transaction, Address};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -51,7 +51,9 @@ impl BlockchainRPCImpl {
 
 impl BlockchainRPC for BlockchainRPCImpl {
     fn eth_block_number(&self) -> Result<String> {
-        let blockchain = self.blockchain.try_read()
+        let blockchain = self
+            .blockchain
+            .try_read()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
         let height = blockchain.get_block_height();
         // Height is count; latest block number is height-1, clamp at 0
@@ -60,7 +62,9 @@ impl BlockchainRPC for BlockchainRPCImpl {
     }
 
     fn eth_get_block_by_hash(&self, hash: String, full_tx: bool) -> Result<Option<Value>> {
-        let blockchain = self.blockchain.try_read()
+        let blockchain = self
+            .blockchain
+            .try_read()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
 
         let hash_clean = hash.trim_start_matches("0x");
@@ -83,7 +87,9 @@ impl BlockchainRPC for BlockchainRPCImpl {
     }
 
     fn eth_get_block_by_number(&self, number: String, full_tx: bool) -> Result<Option<Value>> {
-        let blockchain = self.blockchain.try_read()
+        let blockchain = self
+            .blockchain
+            .try_read()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
 
         let block_number = parse_block_number(&number)?;
@@ -96,7 +102,9 @@ impl BlockchainRPC for BlockchainRPCImpl {
     }
 
     fn eth_get_transaction_by_hash(&self, hash: String) -> Result<Option<Value>> {
-        let blockchain = self.blockchain.try_read()
+        let blockchain = self
+            .blockchain
+            .try_read()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
 
         let hash_clean = hash.trim_start_matches("0x");
@@ -116,9 +124,21 @@ impl BlockchainRPC for BlockchainRPCImpl {
             if let Some(block) = blockchain.get_block_by_height(block_height) {
                 let mut serialized_tx = serialize_transaction(tx);
                 if let Some(obj) = serialized_tx.as_object_mut() {
-                    obj.insert("blockHash".to_string(), serde_json::Value::String(format!("0x{}", hex::encode(block.hash().as_bytes()))));
-                    obj.insert("blockNumber".to_string(), serde_json::Value::String(format!("0x{:x}", block.header.number)));
-                    obj.insert("transactionIndex".to_string(), serde_json::Value::String(format!("0x{:x}", tx_index)));
+                    obj.insert(
+                        "blockHash".to_string(),
+                        serde_json::Value::String(format!(
+                            "0x{}",
+                            hex::encode(block.hash().as_bytes())
+                        )),
+                    );
+                    obj.insert(
+                        "blockNumber".to_string(),
+                        serde_json::Value::String(format!("0x{:x}", block.header.number)),
+                    );
+                    obj.insert(
+                        "transactionIndex".to_string(),
+                        serde_json::Value::String(format!("0x{:x}", tx_index)),
+                    );
                 }
                 Ok(Some(serialized_tx))
             } else {
@@ -131,32 +151,39 @@ impl BlockchainRPC for BlockchainRPCImpl {
 
     fn eth_send_transaction(&self, tx_params: Value) -> Result<String> {
         // Parse transaction parameters
-        let from_str = tx_params.get("from")
+        let from_str = tx_params
+            .get("from")
             .and_then(|v| v.as_str())
             .ok_or_else(|| jsonrpc_core::Error::invalid_params("Missing 'from' field"))?;
-        
-        let to_str = tx_params.get("to")
-            .and_then(|v| v.as_str());
-        
-        let value = tx_params.get("value")
+
+        let to_str = tx_params.get("to").and_then(|v| v.as_str());
+
+        let value = tx_params
+            .get("value")
             .and_then(|v| v.as_str())
             .and_then(|s| parse_hex_number(s).ok())
             .unwrap_or(0);
-        
-        let from = Address::new(from_str.to_string())
-            .map_err(|e| jsonrpc_core::Error::invalid_params(format!("Invalid 'from' address: {}", e)))?;
-        
+
+        let from = Address::new(from_str.to_string()).map_err(|e| {
+            jsonrpc_core::Error::invalid_params(format!("Invalid 'from' address: {}", e))
+        })?;
+
         // Handle `to` address
         let to = match to_str {
-            Some(s) => Address::new(s.to_string())
-                .map_err(|e| jsonrpc_core::Error::invalid_params(format!("Invalid 'to' address: {}", e)))?,
+            Some(s) => Address::new(s.to_string()).map_err(|e| {
+                jsonrpc_core::Error::invalid_params(format!("Invalid 'to' address: {}", e))
+            })?,
             // Use a default zero address if 'to' is not provided
             None => Address::new("0x0000000000000000000000000000000000000000".to_string())
-                .map_err(|e| jsonrpc_core::Error::invalid_params(format!("Invalid default address: {}", e)))?,
+                .map_err(|e| {
+                    jsonrpc_core::Error::invalid_params(format!("Invalid default address: {}", e))
+                })?,
         };
 
         // Acquire state to fetch current nonce
-        let mut blockchain = self.blockchain.try_write()
+        let mut blockchain = self
+            .blockchain
+            .try_write()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
         let current_nonce = blockchain.state.get_nonce(&from).unwrap_or(0);
 
@@ -168,11 +195,14 @@ impl BlockchainRPC for BlockchainRPCImpl {
             1, // fee placeholder
             current_nonce,
         );
-        
+
         // Dev shortcut: apply directly if enabled
         if self.config.dev_apply_on_send {
             if let Err(e) = blockchain.state.apply_transaction(&transaction) {
-                return Err(jsonrpc_core::Error::invalid_params(format!("Transaction application failed: {}", e)));
+                return Err(jsonrpc_core::Error::invalid_params(format!(
+                    "Transaction application failed: {}",
+                    e
+                )));
             }
         } else {
             log::warn!("eth_send_transaction is not fully implemented (mempool)");
@@ -181,13 +211,14 @@ impl BlockchainRPC for BlockchainRPCImpl {
     }
 
     fn eth_get_balance(&self, address: String, _block: Option<String>) -> Result<String> {
-        let blockchain = self.blockchain.try_read()
+        let blockchain = self
+            .blockchain
+            .try_read()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
-        
+
         let addr = Address::new(address)
-             .map_err(|e| jsonrpc_core::Error::invalid_params(format!("Invalid address: {}", e)))?;
-        let balance = blockchain.state.get_balance(&addr)
-            .unwrap_or(0);
+            .map_err(|e| jsonrpc_core::Error::invalid_params(format!("Invalid address: {}", e)))?;
+        let balance = blockchain.state.get_balance(&addr).unwrap_or(0);
         Ok(format!("0x{:x}", balance))
     }
 
@@ -218,48 +249,54 @@ pub struct RpcServer {
 }
 
 impl RpcServer {
-    pub fn new(port: u16, config: NodeConfig) -> std::result::Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(
+        port: u16,
+        config: NodeConfig,
+    ) -> std::result::Result<Self, Box<dyn std::error::Error>> {
         let mut handler = IoHandler::new();
         let cfg = config.clone();
-        
+
         // Add basic methods (chain parameters)
         handler.add_method("eth_chainId", move |_params| {
             let cfg = cfg.clone();
-            async move {
-                Ok(Value::String(format!("0x{:x}", cfg.chain_id)))
-            }
+            async move { Ok(Value::String(format!("0x{:x}", cfg.chain_id))) }
         });
-        
+
         let cfg2 = config.clone();
         handler.add_method("eth_gasPrice", move |_params| {
             let cfg2 = cfg2.clone();
-            async move {
-                Ok(Value::String(format!("0x{:x}", cfg2.gas_price_wei)))
-            }
+            async move { Ok(Value::String(format!("0x{:x}", cfg2.gas_price_wei))) }
         });
-        
-        handler.add_method("eth_estimateGas", |_params: jsonrpc_core::Params| async move {
-            Ok(Value::String("0x5208".to_string())) // 21000 gas
-        });
-        
-        Ok(Self { handler, port, config })
+
+        handler.add_method(
+            "eth_estimateGas",
+            |_params: jsonrpc_core::Params| async move {
+                Ok(Value::String("0x5208".to_string())) // 21000 gas
+            },
+        );
+
+        Ok(Self {
+            handler,
+            port,
+            config,
+        })
     }
-    
+
     pub fn with_blockchain(mut self, blockchain: Arc<RwLock<Blockchain>>) -> Self {
         let rpc_impl = BlockchainRPCImpl::new(blockchain, self.config.clone());
         self.handler.extend_with(rpc_impl.to_delegate());
         self
     }
-    
+
     pub async fn start(self) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use jsonrpc_http_server::{ServerBuilder, DomainsValidation, AccessControlAllowOrigin};
-        
+        use jsonrpc_http_server::{AccessControlAllowOrigin, DomainsValidation, ServerBuilder};
+
         let server = ServerBuilder::new(self.handler)
             .cors(DomainsValidation::AllowOnly(vec![
                 AccessControlAllowOrigin::Any,
             ]))
             .start_http(&format!("127.0.0.1:{}", self.port).parse()?)?;
-        
+
         server.wait();
         Ok(())
     }
@@ -268,25 +305,26 @@ impl RpcServer {
 pub fn create_rpc_handler(blockchain: Arc<RwLock<Blockchain>>, config: NodeConfig) -> IoHandler {
     let rpc_impl = BlockchainRPCImpl::new(blockchain, config.clone());
     let mut io = IoHandler::new();
-    
+
     io.extend_with(rpc_impl.to_delegate());
-    
+
     // Add additional methods
     let cfg = config.clone();
     io.add_method("eth_chainId", move |_params| {
         let cfg = cfg.clone();
         async move { Ok(Value::String(format!("0x{:x}", cfg.chain_id))) }
     });
-    
+
     let cfg2 = config.clone();
     io.add_method("eth_gasPrice", move |_params| {
         let cfg2 = cfg2.clone();
         async move { Ok(Value::String(format!("0x{:x}", cfg2.gas_price_wei))) }
     });
-    
-    io.add_method("eth_estimateGas", |_params: jsonrpc_core::Params| async move {
-        Ok(Value::String("0x5208".to_string()))
-    });
+
+    io.add_method(
+        "eth_estimateGas",
+        |_params: jsonrpc_core::Params| async move { Ok(Value::String("0x5208".to_string())) },
+    );
 
     let cfg3 = config.clone();
     io.add_method("erb_chainInfo", move |_params| {
@@ -302,7 +340,7 @@ pub fn create_rpc_handler(blockchain: Arc<RwLock<Blockchain>>, config: NodeConfi
             }))
         }
     });
-    
+
     io
 }
 
@@ -314,7 +352,8 @@ fn parse_block_number(number: &str) -> jsonrpc_core::Result<u64> {
         u64::from_str_radix(number.trim_start_matches("0x"), 16)
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))
     } else {
-        number.parse::<u64>()
+        number
+            .parse::<u64>()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))
     }
 }
@@ -334,7 +373,10 @@ fn serialize_block(block: &Block, full_tx: bool) -> Value {
         }
     } else {
         for tx in &block.transactions {
-            transactions.push(Value::String(format!("0x{}", hex::encode(tx.hash().as_bytes()))));
+            transactions.push(Value::String(format!(
+                "0x{}",
+                hex::encode(tx.hash().as_bytes())
+            )));
         }
     }
 

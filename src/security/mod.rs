@@ -8,32 +8,32 @@
 //! - Emergency response and incident management
 //! - Automated compliance checking and remediation
 
-pub mod homomorphic;
-pub mod tee;
-pub mod zero_knowledge;
-pub mod hardware_security;
 pub mod audit_trail;
 pub mod emergency_response;
+pub mod hardware_security;
+pub mod homomorphic;
 pub mod key_management;
 pub mod security_audit;
+pub mod tee;
+pub mod zero_knowledge;
 
 // Re-export main components
-pub use homomorphic::{HomomorphicEncryption, FHEOperations, EncryptedComputation};
-pub use tee::{TrustedExecutionEnvironment, TEEConfig, SecureEnclave};
-pub use zero_knowledge::FormalVerifier;
-pub use hardware_security::{HardwareSecurityModule, SecurityEnclave, KeyManagement};
 pub use audit_trail::SecurityAuditor;
 pub use emergency_response::{
-    EmergencyResponseEngine, EmergencyConfig, IncidentReport, IncidentResponse,
-    EmergencyProcedure, SystemHealthStatus, EmergencyReport, IncidentSeverity
+    EmergencyConfig, EmergencyProcedure, EmergencyReport, EmergencyResponseEngine, IncidentReport,
+    IncidentResponse, IncidentSeverity, SystemHealthStatus,
 };
+pub use hardware_security::{HardwareSecurityModule, KeyManagement, SecurityEnclave};
+pub use homomorphic::{EncryptedComputation, FHEOperations, HomomorphicEncryption};
 pub use key_management::{
-    KeyManagementEngine, KeyManagementConfig, KeyMetadata, KeyHandle,
-    KeyType, KeyPurpose, KeyStatus, HSMProvider, KeyManagementStats
+    HSMProvider, KeyHandle, KeyManagementConfig, KeyManagementEngine, KeyManagementStats,
+    KeyMetadata, KeyPurpose, KeyStatus, KeyType,
 };
+pub use tee::{SecureEnclave, TEEConfig, TrustedExecutionEnvironment};
+pub use zero_knowledge::FormalVerifier;
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -79,9 +79,9 @@ pub enum SecurityLevel {
 /// Encryption schemes for homomorphic operations
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EncryptionScheme {
-    BFV,    // Brakerski-Fan-Vercauteren (integer arithmetic)
-    CKKS,   // Cheon-Kim-Kim-Song (approximate arithmetic)
-    TFHE,   // Fast Fully Homomorphic Encryption over Torus
+    BFV,  // Brakerski-Fan-Vercauteren (integer arithmetic)
+    CKKS, // Cheon-Kim-Kim-Song (approximate arithmetic)
+    TFHE, // Fast Fully Homomorphic Encryption over Torus
 }
 
 /// Military-grade security engine
@@ -131,20 +131,29 @@ impl MilitarySecurityEngine {
     }
 
     /// Perform formal verification of cryptographic components
-    pub fn perform_cryptographic_verification(&mut self) -> Result<Vec<crate::security::zero_knowledge::VerificationResult>> {
+    pub fn perform_cryptographic_verification(
+        &mut self,
+    ) -> Result<Vec<crate::security::zero_knowledge::VerificationResult>> {
         if let Some(ref mut verifier) = self.formal_verifier {
             verifier.perform_comprehensive_verification()
         } else {
-            Err(BlockchainError::Security("Formal verifier not initialized".to_string()))
+            Err(BlockchainError::Security(
+                "Formal verifier not initialized".to_string(),
+            ))
         }
     }
 
     /// Perform security audit
-    pub async fn perform_security_audit(&mut self, target_system: &str) -> Result<crate::security::audit_trail::SecurityAuditResult> {
+    pub async fn perform_security_audit(
+        &mut self,
+        target_system: &str,
+    ) -> Result<crate::security::audit_trail::SecurityAuditResult> {
         if let Some(ref mut auditor) = self.auditor {
             auditor.perform_comprehensive_audit(target_system).await
         } else {
-            Err(BlockchainError::Security("Security auditor not initialized".to_string()))
+            Err(BlockchainError::Security(
+                "Security auditor not initialized".to_string(),
+            ))
         }
     }
 

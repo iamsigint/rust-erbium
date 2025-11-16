@@ -1,8 +1,9 @@
 // src/network/discovery.rs
 
+use crate::utils::error::{BlockchainError, Result};
 use libp2p::{Multiaddr, PeerId};
-use crate::utils::error::{Result, BlockchainError};
 use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 /// Information about a peer on the network
@@ -30,6 +31,8 @@ pub struct PeerDiscovery {
     banned_peers: HashSet<PeerId>,
     /// Maximum time without contact to consider a peer inactive
     inactive_threshold: Duration,
+    /// Opportunistically discovered peers (socket addresses)
+    opportunistic_peers: HashSet<SocketAddr>,
 }
 
 impl PeerDiscovery {
@@ -40,22 +43,29 @@ impl PeerDiscovery {
             bootstrap_peers,
             banned_peers: HashSet::new(),
             inactive_threshold: Duration::from_secs(3600), // 1 hour
+            opportunistic_peers: HashSet::new(),
         }
     }
 
     /// Adds a new peer to the list of known peers
     pub fn add_peer(&mut self, peer_id: PeerId, addr: Multiaddr, block_height: u64) -> Result<()> {
         if self.banned_peers.contains(&peer_id) {
-            return Err(BlockchainError::Network(format!("Peer {} está banido", peer_id)));
+            return Err(BlockchainError::Network(format!(
+                "Peer {} está banido",
+                peer_id
+            )));
         }
 
-        self.peers.insert(peer_id, PeerInfo {
-            addr,
+        self.peers.insert(
             peer_id,
-            last_seen: Instant::now(),
-            protocol_version: "1.0.0".to_string(), // Standard version
-            block_height,
-        });
+            PeerInfo {
+                addr,
+                peer_id,
+                last_seen: Instant::now(),
+                protocol_version: "1.0.0".to_string(), // Standard version
+                block_height,
+            },
+        );
 
         log::debug!("Adicionado peer: {}", peer_id);
         Ok(())
@@ -68,7 +78,10 @@ impl PeerDiscovery {
             peer.block_height = block_height;
             Ok(())
         } else {
-            Err(BlockchainError::Network(format!("Peer {} não encontrado", peer_id)))
+            Err(BlockchainError::Network(format!(
+                "Peer {} não encontrado",
+                peer_id
+            )))
         }
     }
 
@@ -78,7 +91,10 @@ impl PeerDiscovery {
             log::debug!("Removido peer: {}", peer_id);
             Ok(())
         } else {
-            Err(BlockchainError::Network(format!("Peer {} não encontrado", peer_id)))
+            Err(BlockchainError::Network(format!(
+                "Peer {} não encontrado",
+                peer_id
+            )))
         }
     }
 
@@ -120,7 +136,8 @@ impl PeerDiscovery {
     /// Cleans inactive peers
     pub fn clean_inactive_peers(&mut self) -> usize {
         let now = Instant::now();
-        let inactive_peers: Vec<PeerId> = self.peers
+        let inactive_peers: Vec<PeerId> = self
+            .peers
             .iter()
             .filter(|(_, peer)| now.duration_since(peer.last_seen) >= self.inactive_threshold)
             .map(|(peer_id, _)| *peer_id)
@@ -145,13 +162,34 @@ impl PeerDiscovery {
         self.banned_peers.len()
     }
 
+    /// Add a peer discovered opportunistically via local discovery mechanisms
+    pub fn add_opportunistic_peer(&mut self, addr: SocketAddr) -> bool {
+        if self.opportunistic_peers.insert(addr) {
+            log::debug!("Cached opportunistic peer: {}", addr);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// List all opportunistically discovered peers
+    pub fn get_opportunistic_peers(&self) -> Vec<SocketAddr> {
+        self.opportunistic_peers.iter().cloned().collect()
+    }
+
+    /// Count of opportunistically discovered peers
+    pub fn opportunistic_peer_count(&self) -> usize {
+        self.opportunistic_peers.len()
+    }
+
     /// Find peers with the highest block height
     pub fn find_highest_block_peers(&self) -> Vec<PeerInfo> {
         if self.peers.is_empty() {
             return Vec::new();
         }
 
-        let max_height = self.peers
+        let max_height = self
+            .peers
             .values()
             .map(|peer| peer.block_height)
             .max()

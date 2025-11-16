@@ -4,8 +4,8 @@
 //! cryptographic operations, ensuring mathematical correctness and
 //! security properties of key algorithms.
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Formal verification result
@@ -58,13 +58,19 @@ impl FormalVerifier {
     }
 
     /// Perform formal verification of a cryptographic component
-    pub fn verify_cryptographic_component(&mut self, component: &str) -> Result<VerificationResult> {
+    pub fn verify_cryptographic_component(
+        &mut self,
+        component: &str,
+    ) -> Result<VerificationResult> {
         match component {
             "dilithium_signature" => self.verify_dilithium_signature(),
             "aes_encryption" => self.verify_aes_encryption(),
             "bulletproofs" => self.verify_bulletproofs(),
             "hash_functions" => self.verify_hash_functions(),
-            _ => Err(BlockchainError::Validator(format!("Unknown component: {}", component))),
+            _ => Err(BlockchainError::Validator(format!(
+                "Unknown component: {}",
+                component
+            ))),
         }
     }
 
@@ -149,9 +155,7 @@ impl FormalVerifier {
                 "Underlying primitives are secure".to_string(),
                 "No quantum attacks applicable".to_string(),
             ],
-            limitations: vec![
-                "Length extension attacks not covered for all functions".to_string(),
-            ],
+            limitations: vec!["Length extension attacks not covered for all functions".to_string()],
             timestamp: current_timestamp(),
         };
 
@@ -181,18 +185,18 @@ impl FormalVerifier {
     /// Check if verification meets required confidence levels
     pub fn check_verification_status(&self) -> VerificationStatus {
         let required_confidence = 0.85; // 85% minimum confidence
-        let critical_components = vec![
-            "dilithium_signature",
-            "aes_encryption",
-        ];
+        let critical_components = vec!["dilithium_signature", "aes_encryption"];
 
         let mut all_verified = true;
         let mut min_confidence = 1.0;
 
         for component in &critical_components {
-            if let Some(result) = self.verification_history.iter()
+            if let Some(result) = self
+                .verification_history
+                .iter()
                 .filter(|r| &r.component == component)
-                .last() {
+                .last()
+            {
                 if !result.verified {
                     all_verified = false;
                 }
@@ -236,7 +240,8 @@ impl FormalVerifier {
             required_confidence: 0.95,
         };
 
-        self.verification_rules.insert("dilithium".to_string(), dilithium_rule);
+        self.verification_rules
+            .insert("dilithium".to_string(), dilithium_rule);
         self.verification_rules.insert("aes".to_string(), aes_rule);
     }
 
@@ -248,8 +253,9 @@ impl FormalVerifier {
             overall_status: self.check_verification_status(),
         };
 
-        serde_json::to_string_pretty(&report)
-            .map_err(|e| BlockchainError::Serialization(format!("Failed to serialize report: {}", e)))
+        serde_json::to_string_pretty(&report).map_err(|e| {
+            BlockchainError::Serialization(format!("Failed to serialize report: {}", e))
+        })
     }
 }
 
@@ -288,7 +294,9 @@ mod tests {
     #[test]
     fn test_dilithium_verification() {
         let mut verifier = FormalVerifier::new();
-        let result = verifier.verify_cryptographic_component("dilithium_signature").unwrap();
+        let result = verifier
+            .verify_cryptographic_component("dilithium_signature")
+            .unwrap();
 
         assert_eq!(result.component, "dilithium_signature");
         assert!(result.verified);
@@ -298,7 +306,9 @@ mod tests {
     #[test]
     fn test_aes_verification() {
         let mut verifier = FormalVerifier::new();
-        let result = verifier.verify_cryptographic_component("aes_encryption").unwrap();
+        let result = verifier
+            .verify_cryptographic_component("aes_encryption")
+            .unwrap();
 
         assert_eq!(result.component, "aes_encryption");
         assert!(result.verified);

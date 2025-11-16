@@ -1,14 +1,14 @@
 // src/core/chain.rs
 
-use super::{Block, Transaction};
-use super::types::{Hash, Address};
 use super::state::State;
+use super::types::{Address, Hash};
+use super::{Block, Transaction};
 use crate::storage::blockchain_storage::BlockchainStorage;
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenesisConfig {
@@ -63,7 +63,7 @@ impl Blockchain {
         blockchain.add_block(genesis_block)?;
         Ok(blockchain)
     }
-    
+
     fn create_genesis_block() -> Result<Block> {
         use std::fs;
         use std::path::Path;
@@ -72,7 +72,10 @@ impl Blockchain {
 
         // Tentar ler configuração do genesis
         let genesis_config_path = "config/genesis/allocations.toml";
-        log::info!("Tentando carregar configuração genesis de: {}", genesis_config_path);
+        log::info!(
+            "Tentando carregar configuração genesis de: {}",
+            genesis_config_path
+        );
 
         if Path::new(genesis_config_path).exists() {
             log::info!("Loading genesis allocations from {}", genesis_config_path);
@@ -81,50 +84,78 @@ impl Blockchain {
                 Ok(config_content) => {
                     match toml::from_str::<GenesisConfig>(&config_content) {
                         Ok(genesis_config) => {
-                            log::info!("Found {} genesis allocations", genesis_config.genesis.initial_balances.len());
+                            log::info!(
+                                "Found {} genesis allocations",
+                                genesis_config.genesis.initial_balances.len()
+                            );
 
                             // Criar endereço do sistema para as alocações genesis
-                            let system_address = Address::new_unchecked("0x0000000000000000000000000000000000000000".to_string());
+                            let system_address = Address::new_unchecked(
+                                "0x0000000000000000000000000000000000000000".to_string(),
+                            );
 
                             // Criar transações para cada alocação
-                            for (i, allocation) in genesis_config.genesis.initial_balances.iter().enumerate() {
+                            for (i, allocation) in
+                                genesis_config.genesis.initial_balances.iter().enumerate()
+                            {
                                 let recipient_address = Address::new(allocation.address.clone())
-                                    .map_err(|e| BlockchainError::InvalidTransaction(
-                                        format!("Invalid genesis allocation address: {}", e)
-                                    ))?;
+                                    .map_err(|e| {
+                                        BlockchainError::InvalidTransaction(format!(
+                                            "Invalid genesis allocation address: {}",
+                                            e
+                                        ))
+                                    })?;
 
                                 // Parse do amount (string para u128)
-                                let amount: u128 = allocation.amount.parse()
-                                    .map_err(|e| BlockchainError::InvalidTransaction(
-                                        format!("Invalid genesis allocation amount: {}", e)
-                                    ))?;
+                                let amount: u128 = allocation.amount.parse().map_err(|e| {
+                                    BlockchainError::InvalidTransaction(format!(
+                                        "Invalid genesis allocation amount: {}",
+                                        e
+                                    ))
+                                })?;
 
                                 // Criar transação de alocação genesis
                                 let genesis_tx = Transaction::new_transfer(
                                     system_address.clone(),
                                     recipient_address,
                                     amount as u64, // Conversão segura pois nossos valores são pequenos
-                                    0, // Sem taxa para genesis
-                                    i as u64, // Nonce sequencial
+                                    0,             // Sem taxa para genesis
+                                    i as u64,      // Nonce sequencial
                                 );
 
                                 transactions.push(genesis_tx);
-                                log::info!("Genesis allocation: {} ERB to {}", allocation.amount, allocation.address);
+                                log::info!(
+                                    "Genesis allocation: {} ERB to {}",
+                                    allocation.amount,
+                                    allocation.address
+                                );
                             }
 
-                            log::info!("Created {} genesis allocation transactions", transactions.len());
+                            log::info!(
+                                "Created {} genesis allocation transactions",
+                                transactions.len()
+                            );
                         }
                         Err(e) => {
-                            log::warn!("Failed to parse genesis config: {}. Using empty genesis block.", e);
+                            log::warn!(
+                                "Failed to parse genesis config: {}. Using empty genesis block.",
+                                e
+                            );
                         }
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to read genesis config file: {}. Using empty genesis block.", e);
+                    log::warn!(
+                        "Failed to read genesis config file: {}. Using empty genesis block.",
+                        e
+                    );
                 }
             }
         } else {
-            log::info!("No genesis config found at {}. Using empty genesis block.", genesis_config_path);
+            log::info!(
+                "No genesis config found at {}. Using empty genesis block.",
+                genesis_config_path
+            );
         }
 
         // Criar bloco genesis
@@ -138,75 +169,88 @@ impl Blockchain {
 
         Ok(block)
     }
-    
+
     pub fn add_block(&mut self, block: Block) -> Result<()> {
         // Verify block structure and transactions
         self.verify_block(&block)?;
-        
+
         // Apply transactions to state
         for tx in &block.transactions {
             self.state.apply_transaction(tx)?;
         }
-        
+
         // Add block to chain
         let block_hash = block.hash();
         let block_index = self.blocks.len();
-        
+
         self.blocks.push(block);
         self.block_hashes.insert(block_hash, block_index);
-        
+
         log::info!("Added block {} at height {}", block_hash, block_index);
-        
+
         Ok(())
     }
-    
+
     fn verify_block(&self, block: &Block) -> Result<()> {
         // Check previous hash
         if let Some(last_block) = self.blocks.last() {
             if block.header.previous_hash != last_block.hash() {
-                return Err(BlockchainError::InvalidBlock("Previous hash mismatch".to_string()));
+                return Err(BlockchainError::InvalidBlock(
+                    "Previous hash mismatch".to_string(),
+                ));
             }
             // Check block number
             if block.header.number != last_block.header.number + 1 {
-                return Err(BlockchainError::InvalidBlock("Invalid block number".to_string()));
+                return Err(BlockchainError::InvalidBlock(
+                    "Invalid block number".to_string(),
+                ));
             }
         } else {
             // This is the genesis block
             if block.header.number != 0 {
-                return Err(BlockchainError::InvalidBlock("Invalid genesis block number".to_string()));
+                return Err(BlockchainError::InvalidBlock(
+                    "Invalid genesis block number".to_string(),
+                ));
             }
         }
-        
+
         // Verify merkle root
         let calculated_merkle_root = Block::calculate_merkle_root(&block.transactions);
         if block.header.merkle_root != calculated_merkle_root {
-            return Err(BlockchainError::InvalidBlock("Merkle root mismatch".to_string()));
+            return Err(BlockchainError::InvalidBlock(
+                "Merkle root mismatch".to_string(),
+            ));
         }
-        
+
         // Verify block signature
         // Skip signature check for genesis block
         if block.header.number > 0 {
             if let Some(validator_key) = self.get_validator_public_key(&block.header.validator) {
                 if !block.verify_signature(&validator_key)? {
-                    return Err(BlockchainError::InvalidBlock("Invalid block signature".to_string()));
+                    return Err(BlockchainError::InvalidBlock(
+                        "Invalid block signature".to_string(),
+                    ));
                 }
             } else {
-                return Err(BlockchainError::InvalidBlock(format!("Validator {} not found", block.header.validator)));
+                return Err(BlockchainError::InvalidBlock(format!(
+                    "Validator {} not found",
+                    block.header.validator
+                )));
             }
         }
-        
+
         // Verify all transactions in the block
         for tx in &block.transactions {
             self.verify_transaction(tx)?;
         }
-        
+
         Ok(())
     }
-    
+
     fn verify_transaction(&self, transaction: &Transaction) -> Result<()> {
         // Basic transaction structure validation
         transaction.validate_basic()?;
-        
+
         match transaction.transaction_type {
             crate::core::transaction::TransactionType::ConfidentialTransfer => {
                 self.verify_confidential_transaction(transaction)?;
@@ -215,28 +259,38 @@ impl Blockchain {
                 self.verify_regular_transaction(transaction)?;
             }
         }
-        
+
         // Verify transaction signature
         // Skip signature verification for genesis transactions (from address 0x0)
         if transaction.from.as_str() != "0x0000000000000000000000000000000000000000" {
             if let Some(sender_key) = self.get_account_public_key(&transaction.from) {
                 if !transaction.verify_signature(&sender_key)? {
-                    return Err(BlockchainError::InvalidTransaction("Invalid transaction signature".to_string()));
+                    return Err(BlockchainError::InvalidTransaction(
+                        "Invalid transaction signature".to_string(),
+                    ));
                 }
             } else {
-                return Err(BlockchainError::InvalidTransaction("Sender account not found".to_string()));
+                return Err(BlockchainError::InvalidTransaction(
+                    "Sender account not found".to_string(),
+                ));
             }
         } else {
-            log::info!("Skipping signature verification for genesis transaction from {}", transaction.from);
+            log::info!(
+                "Skipping signature verification for genesis transaction from {}",
+                transaction.from
+            );
         }
-        
+
         Ok(())
     }
-    
+
     fn verify_regular_transaction(&self, transaction: &Transaction) -> Result<()> {
         // Skip balance and nonce checks for genesis transactions (from address 0x0)
         if transaction.from.as_str() == "0x0000000000000000000000000000000000000000" {
-            log::info!("Skipping balance/nonce verification for genesis transaction to {}", transaction.to);
+            log::info!(
+                "Skipping balance/nonce verification for genesis transaction to {}",
+                transaction.to
+            );
             return Ok(());
         }
 
@@ -256,55 +310,60 @@ impl Blockchain {
         if transaction.nonce != current_nonce {
             return Err(BlockchainError::InvalidTransaction(format!(
                 "Invalid nonce for {}: expected {}, got {}",
-                transaction.from,
-                current_nonce,
-                transaction.nonce
+                transaction.from, current_nonce, transaction.nonce
             )));
         }
 
         Ok(())
     }
-    
+
     fn verify_confidential_transaction(&self, transaction: &Transaction) -> Result<()> {
         use crate::privacy::confidential_tx::ConfidentialTxBuilder;
 
         // Verify ZK proof exists
-        let zk_proof = transaction.zk_proof.as_ref()
-            .ok_or_else(|| BlockchainError::InvalidTransaction(
-                "Confidential transaction missing ZK proof".to_string()
-            ))?;
+        let zk_proof = transaction.zk_proof.as_ref().ok_or_else(|| {
+            BlockchainError::InvalidTransaction(
+                "Confidential transaction missing ZK proof".to_string(),
+            )
+        })?;
 
         // Verify commitments exist
-        let input_commitments = transaction.input_commitments.as_ref()
-            .ok_or_else(|| BlockchainError::InvalidTransaction(
-                "Confidential transaction missing input commitments".to_string()
-            ))?;
-        let output_commitments = transaction.output_commitments.as_ref()
-            .ok_or_else(|| BlockchainError::InvalidTransaction(
-                "Confidential transaction missing output commitments".to_string()
-            ))?;
+        let input_commitments = transaction.input_commitments.as_ref().ok_or_else(|| {
+            BlockchainError::InvalidTransaction(
+                "Confidential transaction missing input commitments".to_string(),
+            )
+        })?;
+        let output_commitments = transaction.output_commitments.as_ref().ok_or_else(|| {
+            BlockchainError::InvalidTransaction(
+                "Confidential transaction missing output commitments".to_string(),
+            )
+        })?;
 
         // Verify range proofs exist
-        let range_proofs = transaction.range_proofs.as_ref()
-            .ok_or_else(|| BlockchainError::InvalidTransaction(
-                "Confidential transaction missing range proofs".to_string()
-            ))?;
+        let range_proofs = transaction.range_proofs.as_ref().ok_or_else(|| {
+            BlockchainError::InvalidTransaction(
+                "Confidential transaction missing range proofs".to_string(),
+            )
+        })?;
 
         // Verify binding signature exists
-        let binding_signature = transaction.binding_signature.as_ref()
-            .ok_or_else(|| BlockchainError::InvalidTransaction(
-                "Confidential transaction missing binding signature".to_string()
-            ))?;
+        let binding_signature = transaction.binding_signature.as_ref().ok_or_else(|| {
+            BlockchainError::InvalidTransaction(
+                "Confidential transaction missing binding signature".to_string(),
+            )
+        })?;
 
         // Reconstruct confidential transaction for verification
         // Parse the commitments properly
-        let input_commitments_parsed: Result<Vec<_>> = input_commitments.iter()
+        let input_commitments_parsed: Result<Vec<_>> = input_commitments
+            .iter()
             .map(|commitment| {
                 // Garantir que o commitment tem o tamanho correto (32 bytes)
                 if commitment.len() != 32 {
-                    return Err(BlockchainError::InvalidTransaction(
-                        format!("Invalid commitment size: {}", commitment.len())
-                    ));
+                    return Err(BlockchainError::InvalidTransaction(format!(
+                        "Invalid commitment size: {}",
+                        commitment.len()
+                    )));
                 }
 
                 // Converter para CompressedRistretto
@@ -315,13 +374,15 @@ impl Blockchain {
             .collect();
         let input_commitments_parsed = input_commitments_parsed?;
 
-        let output_commitments_parsed: Result<Vec<_>> = output_commitments.iter()
+        let output_commitments_parsed: Result<Vec<_>> = output_commitments
+            .iter()
             .map(|commitment| {
                 // Garantir que o commitment tem o tamanho correto (32 bytes)
                 if commitment.len() != 32 {
-                    return Err(BlockchainError::InvalidTransaction(
-                        format!("Invalid commitment size: {}", commitment.len())
-                    ));
+                    return Err(BlockchainError::InvalidTransaction(format!(
+                        "Invalid commitment size: {}",
+                        commitment.len()
+                    )));
                 }
 
                 // Converter para CompressedRistretto
@@ -332,6 +393,12 @@ impl Blockchain {
             .collect();
         let output_commitments_parsed = output_commitments_parsed?;
 
+        let signer_public_key =
+            self.get_account_public_key(&transaction.from)
+                .ok_or_else(|| {
+                    BlockchainError::InvalidTransaction("Sender public key not found".to_string())
+                })?;
+
         let confidential_tx = crate::privacy::confidential_tx::ConfidentialTransaction {
             base_transaction: transaction.clone(),
             input_commitments: input_commitments_parsed,
@@ -339,13 +406,14 @@ impl Blockchain {
             range_proofs: range_proofs.clone(),
             zk_proof: zk_proof.clone(),
             binding_signature: binding_signature.clone(),
+            signer_public_key,
         };
 
         // Create ConfidentialTxBuilder and verify
         let tx_builder = ConfidentialTxBuilder::new();
         if !tx_builder.verify_confidential_transaction(&confidential_tx)? {
             return Err(BlockchainError::InvalidTransaction(
-                "Confidential transaction verification failed".to_string()
+                "Confidential transaction verification failed".to_string(),
             ));
         }
 
@@ -353,30 +421,30 @@ impl Blockchain {
 
         Ok(())
     }
-    
+
     fn get_validator_public_key(&self, validator_address: &str) -> Option<Vec<u8>> {
         // Implementação melhorada para buscar a chave pública do validador
         // Busca no estado da blockchain ou no conjunto de validadores
         use crate::consensus::validator::ValidatorSet;
-        
+
         // Converter o endereço de string para Address
         let validator_addr = match Address::new(validator_address.to_string()) {
             Ok(addr) => addr,
             Err(_) => return None,
         };
-        
+
         // Em uma implementação real, isso buscaria do estado
         // Por enquanto, vamos simular um conjunto de validadores
         let validator_set = ValidatorSet::new();
-        
+
         // Buscar a chave pública do validador
         validator_set.get_public_key(&validator_addr)
     }
-    
+
     fn get_account_public_key(&self, address: &Address) -> Option<Vec<u8>> {
         // Implementação melhorada para buscar a chave pública da conta
         // Busca no estado da blockchain
-        
+
         // Verificar se a conta existe no estado
         if let Ok(account_exists) = self.state.account_exists(address) {
             if !account_exists {
@@ -385,45 +453,47 @@ impl Blockchain {
         } else {
             return None;
         }
-        
+
         // Em uma implementação real, isso buscaria do estado
         // Por enquanto, vamos simular uma busca no estado
-        
+
         // Gerar uma chave determinística baseada no endereço para testes
         // Isso é apenas para simulação, não para uso em produção!
         let addr_bytes = match address.to_bytes() {
             Ok(bytes) => bytes,
             Err(_) => return None,
         };
-        
+
         // Usar o hash do endereço como chave pública para testes
         let mut key = Vec::with_capacity(32);
         key.extend_from_slice(&addr_bytes);
         key.resize(32, 0); // Garantir que tenha 32 bytes
-        
+
         Some(key)
     }
-    
+
     pub fn get_block_by_hash(&self, hash: &Hash) -> Option<&Block> {
-        self.block_hashes.get(hash).map(|&index| &self.blocks[index])
+        self.block_hashes
+            .get(hash)
+            .map(|&index| &self.blocks[index])
     }
-    
+
     pub fn get_block_by_height(&self, height: usize) -> Option<&Block> {
         self.blocks.get(height)
     }
-    
+
     pub fn get_latest_block(&self) -> Option<&Block> {
         self.blocks.last()
     }
-    
+
     pub fn get_block_height(&self) -> usize {
         self.blocks.len()
     }
-    
+
     pub fn get_current_difficulty(&self) -> u64 {
         self.current_difficulty
     }
-    
+
     pub fn calculate_transaction_throughput(&self) -> f64 {
         // Calculate approximate TPS based on recent blocks
         if self.blocks.len() < 2 {
@@ -431,7 +501,8 @@ impl Blockchain {
         }
 
         let recent_blocks = &self.blocks[self.blocks.len().saturating_sub(10)..];
-        let total_transactions: usize = recent_blocks.iter()
+        let total_transactions: usize = recent_blocks
+            .iter()
             .map(|block| block.transactions.len())
             .sum();
 
@@ -478,7 +549,10 @@ impl PersistentBlockchain {
             let storage_read = storage.read().await;
             if let Ok(latest_height) = storage_read.get_latest_height().await {
                 if latest_height > 0 {
-                    log::info!("Loading existing blockchain from storage (height: {})", latest_height);
+                    log::info!(
+                        "Loading existing blockchain from storage (height: {})",
+                        latest_height
+                    );
                     drop(storage_read); // Release the read lock
                     return Self::load_from_storage(storage).await;
                 }
@@ -488,18 +562,36 @@ impl PersistentBlockchain {
         // Create new blockchain
         log::info!("Creating new blockchain with persistence");
         let blockchain = Blockchain::new()?;
-        let persistent = Self { blockchain, storage };
+        let persistent = Self {
+            blockchain,
+            storage,
+        };
 
         // Store genesis block
         if let Some(genesis_block) = persistent.blockchain.blocks.first() {
-            persistent.storage.write().await.store_block(genesis_block).await?;
+            persistent
+                .storage
+                .write()
+                .await
+                .store_block(genesis_block)
+                .await?;
             for (tx_index, tx) in genesis_block.transactions.iter().enumerate() {
-                persistent.storage.write().await.store_transaction(tx, 0, tx_index).await?;
+                persistent
+                    .storage
+                    .write()
+                    .await
+                    .store_transaction(tx, 0, tx_index)
+                    .await?;
             }
         }
 
         // Store initial state
-        persistent.storage.write().await.store_state(&persistent.blockchain.state).await?;
+        persistent
+            .storage
+            .write()
+            .await
+            .store_state(&persistent.blockchain.state)
+            .await?;
 
         Ok(persistent)
     }
@@ -536,9 +628,15 @@ impl PersistentBlockchain {
             blockchain.state = state;
         }
 
-        log::info!("Loaded blockchain with {} blocks", blockchain.get_block_height());
+        log::info!(
+            "Loaded blockchain with {} blocks",
+            blockchain.get_block_height()
+        );
 
-        Ok(Self { blockchain, storage })
+        Ok(Self {
+            blockchain,
+            storage,
+        })
     }
 
     /// Add block with persistence
@@ -551,11 +649,19 @@ impl PersistentBlockchain {
 
         // Store transactions
         for (tx_index, tx) in block.transactions.iter().enumerate() {
-            self.storage.write().await.store_transaction(tx, block.header.number, tx_index).await?;
+            self.storage
+                .write()
+                .await
+                .store_transaction(tx, block.header.number, tx_index)
+                .await?;
         }
 
         // Update state in storage
-        self.storage.write().await.store_state(&self.blockchain.state).await?;
+        self.storage
+            .write()
+            .await
+            .store_state(&self.blockchain.state)
+            .await?;
 
         Ok(())
     }

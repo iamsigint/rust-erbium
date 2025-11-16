@@ -1,7 +1,7 @@
 //! Bridge manager for cross-chain operations
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 
 /// Bridge manager for coordinating cross-chain operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,7 +14,11 @@ impl BridgeManager {
     /// Create a new bridge manager
     pub fn new() -> Self {
         Self {
-            supported_chains: vec!["ethereum".to_string(), "bitcoin".to_string(), "polkadot".to_string()],
+            supported_chains: vec![
+                "ethereum".to_string(),
+                "bitcoin".to_string(),
+                "polkadot".to_string(),
+            ],
             active_bridges: Vec::new(),
         }
     }
@@ -25,7 +29,9 @@ impl BridgeManager {
             self.active_bridges.push(bridge_id);
             Ok(())
         } else {
-            Err(BlockchainError::Bridge("Bridge already registered".to_string()))
+            Err(BlockchainError::Bridge(
+                "Bridge already registered".to_string(),
+            ))
         }
     }
 

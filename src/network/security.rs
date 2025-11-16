@@ -3,18 +3,16 @@
 //! This module implements secure network communications using TLS 1.3 and Noise protocol
 //! for all peer-to-peer communications, ensuring encrypted and authenticated connections.
 
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
 use libp2p::{
     core::upgrade,
     identity::{self, Keypair},
-    noise,
-    PeerId,
-    Transport,
+    noise, PeerId, Transport,
 };
-use std::time::Duration;
-use tokio::sync::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
 
 /// Network security configuration
 #[derive(Debug, Clone)]
@@ -61,20 +59,26 @@ impl SecureTransportBuilder {
     }
 
     /// Build a secure transport with Noise protocol
-    pub fn build_secure_transport(&self) -> Result<libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>> {
+    pub fn build_secure_transport(
+        &self,
+    ) -> Result<libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>>
+    {
         // Start with TCP transport
         let tcp_transport = libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::default());
 
         // Add DNS resolution
-        let dns_transport = libp2p::dns::tokio::Transport::system(tcp_transport)
-            .map_err(|e| BlockchainError::Network(format!("DNS transport creation failed: {}", e)))?;
+        let dns_transport = libp2p::dns::tokio::Transport::system(tcp_transport).map_err(|e| {
+            BlockchainError::Network(format!("DNS transport creation failed: {}", e))
+        })?;
 
         // Apply Noise protocol for authentication and encryption
         // Noise is required for secure communications
         let transport = dns_transport
             .upgrade(upgrade::Version::V1)
-            .authenticate(noise::Config::new(&self.local_keypair)
-                .map_err(|e| BlockchainError::Network(format!("Noise config failed: {}", e)))?)
+            .authenticate(
+                noise::Config::new(&self.local_keypair)
+                    .map_err(|e| BlockchainError::Network(format!("Noise config failed: {}", e)))?,
+            )
             .multiplex(libp2p::yamux::Config::default())
             .timeout(Duration::from_secs(self.config.connection_timeout_secs))
             .boxed();
@@ -126,19 +130,29 @@ impl PeerAuthenticator {
     }
 
     /// Authenticate a peer connection
-    pub async fn authenticate_peer(&self, peer_id: &PeerId, _address: &libp2p::Multiaddr) -> Result<TrustLevel> {
+    pub async fn authenticate_peer(
+        &self,
+        peer_id: &PeerId,
+        _address: &libp2p::Multiaddr,
+    ) -> Result<TrustLevel> {
         let peers = self.trusted_peers.read().await;
 
         match peers.get(peer_id) {
             Some(peer_info) => {
                 // Check if peer is blocked
                 if peer_info.trust_level == TrustLevel::Blocked {
-                    return Err(BlockchainError::Network(format!("Peer {} is blocked", peer_id)));
+                    return Err(BlockchainError::Network(format!(
+                        "Peer {} is blocked",
+                        peer_id
+                    )));
                 }
 
                 // Check connection limits
                 if peer_info.connection_count >= self.config.max_connections_per_peer {
-                    return Err(BlockchainError::Network(format!("Too many connections from peer {}", peer_id)));
+                    return Err(BlockchainError::Network(format!(
+                        "Too many connections from peer {}",
+                        peer_id
+                    )));
                 }
 
                 Ok(peer_info.trust_level.clone())
@@ -157,7 +171,11 @@ impl PeerAuthenticator {
     }
 
     /// Add a trusted peer
-    pub async fn add_trusted_peer(&self, peer_id: PeerId, addresses: Vec<libp2p::Multiaddr>) -> Result<()> {
+    pub async fn add_trusted_peer(
+        &self,
+        peer_id: PeerId,
+        addresses: Vec<libp2p::Multiaddr>,
+    ) -> Result<()> {
         let mut peers = self.trusted_peers.write().await;
 
         let peer_info = PeerInfo {
@@ -274,11 +292,13 @@ impl DDoSProtection {
         let mut attempts = self.connection_attempts.write().await;
         let now = std::time::SystemTime::now();
 
-        let attempt = attempts.entry(ip_addr.to_string()).or_insert(ConnectionAttempt {
-            count: 0,
-            first_attempt: now,
-            last_attempt: now,
-        });
+        let attempt = attempts
+            .entry(ip_addr.to_string())
+            .or_insert(ConnectionAttempt {
+                count: 0,
+                first_attempt: now,
+                last_attempt: now,
+            });
 
         // Reset counter if it's been more than a minute since first attempt
         if let Ok(duration) = now.duration_since(attempt.first_attempt) {
@@ -295,7 +315,11 @@ impl DDoSProtection {
         let allowed = attempt.count <= self.rate_limits.max_connection_attempts_per_minute;
 
         if !allowed {
-            log::warn!("Rate limit exceeded for IP: {} ({} attempts)", ip_addr, attempt.count);
+            log::warn!(
+                "Rate limit exceeded for IP: {} ({} attempts)",
+                ip_addr,
+                attempt.count
+            );
         }
 
         Ok(allowed)
@@ -368,7 +392,10 @@ impl NetworkSecurityManager {
     }
 
     /// Get the secure transport
-    pub fn secure_transport(&self) -> Result<libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>> {
+    pub fn secure_transport(
+        &self,
+    ) -> Result<libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>>
+    {
         self.transport_builder.build_secure_transport()
     }
 
@@ -409,16 +436,24 @@ impl NetworkSecurityManager {
         let mut score = 0u8;
 
         // Noise protocol provides strong security (primary layer)
-        if self.config.enable_noise { score += 40; }
+        if self.config.enable_noise {
+            score += 40;
+        }
 
         // Peer authentication adds trust layer
-        if self.config.enable_peer_auth { score += 25; }
+        if self.config.enable_peer_auth {
+            score += 25;
+        }
 
         // Connection limits prevent abuse
-        if self.config.max_connections_per_peer <= 5 { score += 15; }
+        if self.config.max_connections_per_peer <= 5 {
+            score += 15;
+        }
 
         // Strict validation adds robustness
-        if self.config.strict_cert_validation { score += 10; }
+        if self.config.strict_cert_validation {
+            score += 10;
+        }
 
         // DDoS protection is active
         score += 10;
@@ -467,7 +502,9 @@ mod tests {
         assert_eq!(trust_level, TrustLevel::Unknown);
 
         // Add as trusted peer
-        auth.add_trusted_peer(peer_id.clone(), vec![addr.clone()]).await.unwrap();
+        auth.add_trusted_peer(peer_id.clone(), vec![addr.clone()])
+            .await
+            .unwrap();
 
         // Should now return Trusted
         let trust_level = auth.authenticate_peer(&peer_id, &addr).await.unwrap();

@@ -1,7 +1,7 @@
 //! Transaction builder for cross-chain operations
 
 use crate::utils::error::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Transaction builder for cross-chain operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +21,11 @@ pub enum TransactionType {
 
 impl TransactionBuilder {
     /// Create a new transaction builder
-    pub fn new(source_chain: String, target_chain: String, transaction_type: TransactionType) -> Self {
+    pub fn new(
+        source_chain: String,
+        target_chain: String,
+        transaction_type: TransactionType,
+    ) -> Self {
         Self {
             source_chain,
             target_chain,

@@ -1,6 +1,6 @@
+use erbium_blockchain::core::chain::Blockchain;
 use std::fs;
 use std::path::Path;
-use erbium_blockchain::core::chain::Blockchain;
 
 // Initialize basic logging
 fn init_logging() {
@@ -45,11 +45,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create blockchain (this will load genesis allocations)
     println!("2. Creating blockchain with genesis allocations...");
     let blockchain = Blockchain::new()?;
-    println!("   Blockchain created with {} blocks", blockchain.get_block_height());
+    println!(
+        "   Blockchain created with {} blocks",
+        blockchain.get_block_height()
+    );
 
     // Check genesis block
     if let Some(genesis_block) = blockchain.get_latest_block() {
-        println!("   Genesis block contains {} transactions", genesis_block.transactions.len());
+        println!(
+            "   Genesis block contains {} transactions",
+            genesis_block.transactions.len()
+        );
 
         if !genesis_block.transactions.is_empty() {
             println!("   Genesis allocations found:");
@@ -66,13 +72,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n3. Network total supply: {} ERB", total_supply);
 
     // Check development faucet
-    let faucet_addr = erbium_blockchain::core::types::Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
+    let faucet_addr = erbium_blockchain::core::types::Address::new_unchecked(
+        "0x0000000000000000000000000000000000000001".to_string(),
+    );
     let faucet_balance = blockchain.state.get_balance(&faucet_addr)?;
     println!("4. Development faucet: {} ERB", faucet_balance);
 
     // Demonstrate ERB units system
     println!("\n5. ERB Units System:");
-    use erbium_blockchain::core::units::{ErbAmount, Unit, constants};
+    use erbium_blockchain::core::units::{constants, ErbAmount, Unit};
 
     println!("   Available units:");
     println!("      - 1 ion = 0.00000001 ERB (minimum unit)");
@@ -94,7 +102,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     for example in examples {
-        println!("      - {} = {} = {}",
+        println!(
+            "      - {} = {} = {}",
             example.format(Unit::ERB),
             example.format(Unit::Ion),
             example.format_auto()
@@ -106,7 +115,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Try to read configuration to verify addresses
     if let Ok(config_content) = fs::read_to_string("config/genesis/allocations.toml") {
-        if let Ok(genesis_config) = toml::from_str::<erbium_blockchain::core::chain::GenesisConfig>(&config_content) {
+        if let Ok(genesis_config) =
+            toml::from_str::<erbium_blockchain::core::chain::GenesisConfig>(&config_content)
+        {
             println!("   Configured genesis allocations:");
             for (i, allocation) in genesis_config.genesis.initial_balances.iter().enumerate() {
                 let allocation_type = match i {
@@ -114,17 +125,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     1 => "Development Fund",
                     2 => "Ecosystem Fund",
                     3 => "Treasury",
-                    _ => "Other"
+                    _ => "Other",
                 };
 
                 let amount_ions = allocation.amount.parse::<u128>().unwrap_or(0);
                 let amount = ErbAmount::from_ions(amount_ions);
-                println!("      {}. {}: {} ({})", i + 1, allocation_type, amount.format_auto(), allocation.address);
+                println!(
+                    "      {}. {}: {} ({})",
+                    i + 1,
+                    allocation_type,
+                    amount.format_auto(),
+                    allocation.address
+                );
 
                 // Check if address is valid (not placeholder)
                 if allocation.address == "0x0000000000000000000000000000000000000000" {
                     println!("         WARNING: PLACEHOLDER ADDRESS - REPLACE BEFORE PRODUCTION!");
-                } else if let Ok(address) = erbium_blockchain::core::types::Address::new(allocation.address.clone()) {
+                } else if let Ok(address) =
+                    erbium_blockchain::core::types::Address::new(allocation.address.clone())
+                {
                     if let Ok(balance) = blockchain.state.get_balance(&address) {
                         let balance_amount = ErbAmount::from_ions(balance as u128);
                         println!("         Current balance: {}", balance_amount.format_auto());
@@ -136,7 +155,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            let total_allocated: u128 = genesis_config.genesis.initial_balances.iter()
+            let total_allocated: u128 = genesis_config
+                .genesis
+                .initial_balances
+                .iter()
                 .map(|a| a.amount.parse::<u128>().unwrap_or(0))
                 .sum();
             let total_amount = ErbAmount::from_ions(total_allocated);
@@ -148,8 +170,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n7. Important constants:");
     println!("   - Maximum supply: {} ERB", ErbAmount::MAX_SUPPLY_ERB);
     println!("   - Maximum supply: {} ions", ErbAmount::MAX_SUPPLY_IONS);
-    println!("   - Personal reserve: {}", constants::PERSONAL_RESERVE.format_auto());
-    println!("   - Development fund: {}", constants::DEV_FUND.format_auto());
+    println!(
+        "   - Personal reserve: {}",
+        constants::PERSONAL_RESERVE.format_auto()
+    );
+    println!(
+        "   - Development fund: {}",
+        constants::DEV_FUND.format_auto()
+    );
     println!("   - Ecosystem fund: {}", constants::ECO_FUND.format_auto());
     println!("   - Treasury: {}", constants::TREASURY.format_auto());
 
@@ -157,7 +185,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nSummary:");
     println!("   - Blocks in chain: {}", blockchain.get_block_height());
     println!("   - Total supply: {} ERB", total_supply);
-    println!("   - Genesis transactions: {}", blockchain.get_latest_block().map(|b| b.transactions.len()).unwrap_or(0));
+    println!(
+        "   - Genesis transactions: {}",
+        blockchain
+            .get_latest_block()
+            .map(|b| b.transactions.len())
+            .unwrap_or(0)
+    );
 
     Ok(())
 }

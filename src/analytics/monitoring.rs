@@ -3,13 +3,13 @@
 //! This module provides comprehensive monitoring of cluster performance metrics
 //! including CPU, memory, network, consensus, and storage metrics across all nodes.
 
-use crate::utils::error::{Result, BlockchainError};
-use crate::analytics::{AlertType, AlertSeverity};
-use serde::{Serialize, Deserialize};
+use crate::analytics::{AlertSeverity, AlertType};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
 
 /// Cluster monitoring configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,10 +92,10 @@ impl ClusterMetrics {
 
     /// Check if metrics indicate critical issues
     pub fn has_critical_issues(&self) -> bool {
-        self.cpu_usage_percent > 95.0 ||
-        self.memory_usage_percent > 98.0 ||
-        self.error_rate > 0.1 ||
-        self.consensus_delay_ms > 10000.0
+        self.cpu_usage_percent > 95.0
+            || self.memory_usage_percent > 98.0
+            || self.error_rate > 0.1
+            || self.consensus_delay_ms > 10000.0
     }
 }
 
@@ -216,7 +216,9 @@ impl ClusterMonitor {
     pub async fn start_monitoring(&self) -> Result<()> {
         let mut is_monitoring = self.is_monitoring.write().await;
         if *is_monitoring {
-            return Err(BlockchainError::Analytics("Monitoring already running".to_string()));
+            return Err(BlockchainError::Analytics(
+                "Monitoring already running".to_string(),
+            ));
         }
 
         *is_monitoring = true;
@@ -228,7 +230,8 @@ impl ClusterMonitor {
         let is_monitoring_flag = Arc::clone(&self.is_monitoring);
 
         let task = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(config.collection_interval_seconds));
+            let mut interval =
+                tokio::time::interval(Duration::from_secs(config.collection_interval_seconds));
 
             loop {
                 interval.tick().await;
@@ -239,7 +242,8 @@ impl ClusterMonitor {
                 }
 
                 // Collect metrics from all nodes (in production, this would query actual nodes)
-                if let Err(e) = Self::collect_cluster_metrics(&metrics_history, &node_health).await {
+                if let Err(e) = Self::collect_cluster_metrics(&metrics_history, &node_health).await
+                {
                     log::error!("Failed to collect cluster metrics: {:?}", e);
                 }
 
@@ -277,13 +281,17 @@ impl ClusterMonitor {
         let mut history = self.metrics_history.write().await;
 
         let node_history = history.entry(metrics.node_id.clone()).or_insert_with(|| {
-            VecDeque::with_capacity((self.config.metrics_retention_hours * 3600 / self.config.collection_interval_seconds) as usize)
+            VecDeque::with_capacity(
+                (self.config.metrics_retention_hours * 3600
+                    / self.config.collection_interval_seconds) as usize,
+            )
         });
 
         node_history.push_back(metrics);
 
         // Maintain capacity
-        let max_entries = (self.config.metrics_retention_hours * 3600 / self.config.collection_interval_seconds) as usize;
+        let max_entries = (self.config.metrics_retention_hours * 3600
+            / self.config.collection_interval_seconds) as usize;
         while node_history.len() > max_entries {
             node_history.pop_front();
         }
@@ -300,7 +308,8 @@ impl ClusterMonitor {
 
         for (node_id, metrics_queue) in history.iter() {
             if let Some(latest_metrics) = metrics_queue.back() {
-                let health_status = node_health.get(node_id)
+                let health_status = node_health
+                    .get(node_id)
                     .cloned()
                     .unwrap_or(NodeHealthStatus::Offline);
 
@@ -321,7 +330,9 @@ impl ClusterMonitor {
         let node_metrics = self.get_current_metrics().await?;
 
         if node_metrics.is_empty() {
-            return Err(BlockchainError::Analytics("No metrics available".to_string()));
+            return Err(BlockchainError::Analytics(
+                "No metrics available".to_string(),
+            ));
         }
 
         let mut aggregated = ClusterMetrics {
@@ -410,7 +421,11 @@ impl ClusterMonitor {
     }
 
     /// Get metrics history for a specific node
-    pub async fn get_node_metrics_history(&self, node_id: &str, hours: u64) -> Result<Vec<ClusterMetrics>> {
+    pub async fn get_node_metrics_history(
+        &self,
+        node_id: &str,
+        hours: u64,
+    ) -> Result<Vec<ClusterMetrics>> {
         let history = self.metrics_history.read().await;
 
         if let Some(node_history) = history.get(node_id) {
@@ -439,23 +454,29 @@ impl ClusterMonitor {
         let _node_health = self.node_health.read().await;
 
         let total_nodes = node_metrics.len();
-        let healthy_nodes = node_metrics.iter()
+        let healthy_nodes = node_metrics
+            .iter()
             .filter(|n| n.health_status == NodeHealthStatus::Healthy)
             .count();
-        let degraded_nodes = node_metrics.iter()
+        let degraded_nodes = node_metrics
+            .iter()
             .filter(|n| n.health_status == NodeHealthStatus::Degraded)
             .count();
-        let critical_nodes = node_metrics.iter()
+        let critical_nodes = node_metrics
+            .iter()
             .filter(|n| n.health_status == NodeHealthStatus::Critical)
             .count();
-        let offline_nodes = node_metrics.iter()
+        let offline_nodes = node_metrics
+            .iter()
             .filter(|n| n.health_status == NodeHealthStatus::Offline)
             .count();
 
         let average_health_score = if !node_metrics.is_empty() {
-            node_metrics.iter()
+            node_metrics
+                .iter()
                 .map(|n| n.metrics.system_health_score())
-                .sum::<f64>() / node_metrics.len() as f64
+                .sum::<f64>()
+                / node_metrics.len() as f64
         } else {
             0.0
         };
@@ -514,11 +535,14 @@ impl ClusterMonitor {
             };
 
             let mut history = metrics_history.write().await;
-            let node_history = history.entry(node_id.to_string()).or_insert_with(VecDeque::new);
+            let node_history = history
+                .entry(node_id.to_string())
+                .or_insert_with(VecDeque::new);
             node_history.push_back(metrics);
 
             // Keep only recent metrics
-            while node_history.len() > 2880 { // 24 hours at 30-second intervals
+            while node_history.len() > 2880 {
+                // 24 hours at 30-second intervals
                 node_history.pop_front();
             }
         }
@@ -556,7 +580,8 @@ impl ClusterMonitor {
                 let health_score = latest.system_health_score();
                 let time_since_last_metric = current_timestamp() - latest.timestamp;
 
-                if time_since_last_metric > 300 { // 5 minutes
+                if time_since_last_metric > 300 {
+                    // 5 minutes
                     NodeHealthStatus::Offline
                 } else if latest.has_critical_issues() || health_score < 30.0 {
                     NodeHealthStatus::Critical

@@ -70,47 +70,56 @@ impl ErbAmount {
         // Tentar identificar a unidade
         if s.ends_with(" ion") || s.ends_with(" ions") {
             let value_str = s.trim_end_matches(" ion").trim_end_matches(" ions");
-            let ions = value_str.parse::<u128>()
+            let ions = value_str
+                .parse::<u128>()
                 .map_err(|_| format!("Valor inválido para ions: {}", value_str))?;
             Ok(Self::from_ions(ions))
         } else if s.ends_with(" μERB") || s.ends_with(" microERB") {
             let value_str = s.trim_end_matches(" μERB").trim_end_matches(" microERB");
-            let micro_erb = value_str.parse::<f64>()
+            let micro_erb = value_str
+                .parse::<f64>()
                 .map_err(|_| format!("Valor inválido para microERB: {}", value_str))?;
             Ok(Self::from_erb(micro_erb / 1_000_000.0))
         } else if s.ends_with(" mERB") || s.ends_with(" milliERB") {
             let value_str = s.trim_end_matches(" mERB").trim_end_matches(" milliERB");
-            let milli_erb = value_str.parse::<f64>()
+            let milli_erb = value_str
+                .parse::<f64>()
                 .map_err(|_| format!("Valor inválido para milliERB: {}", value_str))?;
             Ok(Self::from_erb(milli_erb / 1_000.0))
         } else if s.ends_with(" cERB") || s.ends_with(" centiERB") {
             let value_str = s.trim_end_matches(" cERB").trim_end_matches(" centiERB");
-            let centi_erb = value_str.parse::<f64>()
+            let centi_erb = value_str
+                .parse::<f64>()
                 .map_err(|_| format!("Valor inválido para centiERB: {}", value_str))?;
             Ok(Self::from_erb(centi_erb / 100.0))
         } else if s.ends_with(" dERB") || s.ends_with(" deciERB") {
             let value_str = s.trim_end_matches(" dERB").trim_end_matches(" deciERB");
-            let deci_erb = value_str.parse::<f64>()
+            let deci_erb = value_str
+                .parse::<f64>()
                 .map_err(|_| format!("Valor inválido para deciERB: {}", value_str))?;
             Ok(Self::from_erb(deci_erb / 10.0))
         } else if s.ends_with(" ERB") {
             let value_str = s.trim_end_matches(" ERB");
-            let erb = value_str.parse::<f64>()
+            let erb = value_str
+                .parse::<f64>()
                 .map_err(|_| format!("Valor inválido para ERB: {}", value_str))?;
             Ok(Self::from_erb(erb))
         } else if s.ends_with(" kERB") || s.ends_with(" kiloERB") {
             let value_str = s.trim_end_matches(" kERB").trim_end_matches(" kiloERB");
-            let kilo_erb = value_str.parse::<f64>()
+            let kilo_erb = value_str
+                .parse::<f64>()
                 .map_err(|_| format!("Valor inválido para kiloERB: {}", value_str))?;
             Ok(Self::from_erb(kilo_erb * 1_000.0))
         } else if s.ends_with(" M-ERB") || s.ends_with(" megaERB") {
             let value_str = s.trim_end_matches(" M-ERB").trim_end_matches(" megaERB");
-            let mega_erb = value_str.parse::<f64>()
+            let mega_erb = value_str
+                .parse::<f64>()
                 .map_err(|_| format!("Valor inválido para megaERB: {}", value_str))?;
             Ok(Self::from_erb(mega_erb * 1_000_000.0))
         } else {
             // Assume ERB se não especificado
-            let erb = s.parse::<f64>()
+            let erb = s
+                .parse::<f64>()
                 .map_err(|_| format!("Valor inválido: {}", s))?;
             Ok(Self::from_erb(erb))
         }
@@ -133,37 +142,40 @@ impl ErbAmount {
             Unit::MicroERB => {
                 let micro_erb = self.to_erb() * 1_000_000.0;
                 format!("{:.6} μERB", micro_erb)
-            },
+            }
             Unit::MilliERB => {
                 let milli_erb = self.to_erb() * 1_000.0;
                 format!("{:.3} mERB", milli_erb)
-            },
+            }
             Unit::CentiERB => {
                 let centi_erb = self.to_erb() * 100.0;
                 format!("{:.2} cERB", centi_erb)
-            },
+            }
             Unit::DeciERB => {
                 let deci_erb = self.to_erb() * 10.0;
                 format!("{:.1} dERB", deci_erb)
-            },
+            }
             Unit::ERB => {
                 let erb = self.to_erb();
                 if erb.fract() == 0.0 {
                     format!("{:.0} ERB", erb)
                 } else {
                     // Remove trailing zeros and dot if present
-                    let formatted = format!("{:.8}", erb).trim_end_matches('0').trim_end_matches('.').to_string();
+                    let formatted = format!("{:.8}", erb)
+                        .trim_end_matches('0')
+                        .trim_end_matches('.')
+                        .to_string();
                     format!("{} ERB", formatted)
                 }
-            },
+            }
             Unit::KiloERB => {
                 let kilo_erb = self.to_erb() / 1_000.0;
                 format!("{:.3} kERB", kilo_erb)
-            },
+            }
             Unit::MegaERB => {
                 let mega_erb = self.to_erb() / 1_000_000.0;
                 format!("{:.3} M-ERB", mega_erb)
-            },
+            }
         }
     }
 
@@ -192,19 +204,25 @@ impl ErbAmount {
 
     /// Operações aritméticas
     pub fn add(&self, other: &ErbAmount) -> Result<Self, String> {
-        let result = self.ions.checked_add(other.ions)
+        let result = self
+            .ions
+            .checked_add(other.ions)
             .ok_or("Overflow na adição")?;
         Ok(Self { ions: result })
     }
 
     pub fn sub(&self, other: &ErbAmount) -> Result<Self, String> {
-        let result = self.ions.checked_sub(other.ions)
+        let result = self
+            .ions
+            .checked_sub(other.ions)
             .ok_or("Underflow na subtração")?;
         Ok(Self { ions: result })
     }
 
     pub fn mul(&self, factor: u128) -> Result<Self, String> {
-        let result = self.ions.checked_mul(factor)
+        let result = self
+            .ions
+            .checked_mul(factor)
             .ok_or("Overflow na multiplicação")?;
         Ok(Self { ions: result })
     }
@@ -213,7 +231,9 @@ impl ErbAmount {
         if divisor == 0 {
             return Err("Divisão por zero".to_string());
         }
-        Ok(Self { ions: self.ions / divisor })
+        Ok(Self {
+            ions: self.ions / divisor,
+        })
     }
 }
 
@@ -285,26 +305,42 @@ pub mod constants {
     pub const ONE_CENTI_ERB: ErbAmount = ErbAmount { ions: 1_000_000 }; // 10^-2 ERB
     pub const ONE_DECI_ERB: ErbAmount = ErbAmount { ions: 10_000_000 }; // 10^-1 ERB
     pub const ONE_ERB: ErbAmount = ErbAmount { ions: 100_000_000 }; // 1 ERB
-    pub const ONE_KILO_ERB: ErbAmount = ErbAmount { ions: 100_000_000_000 }; // 10^3 ERB
-    pub const ONE_MEGA_ERB: ErbAmount = ErbAmount { ions: 100_000_000_000_000 }; // 10^6 ERB
+    pub const ONE_KILO_ERB: ErbAmount = ErbAmount {
+        ions: 100_000_000_000,
+    }; // 10^3 ERB
+    pub const ONE_MEGA_ERB: ErbAmount = ErbAmount {
+        ions: 100_000_000_000_000,
+    }; // 10^6 ERB
 
     // Reserva pessoal (50M ERB)
-    pub const PERSONAL_RESERVE: ErbAmount = ErbAmount { ions: 50_000_000 * 100_000_000 };
+    pub const PERSONAL_RESERVE: ErbAmount = ErbAmount {
+        ions: 50_000_000 * 100_000_000,
+    };
 
     // Development Fund (20M ERB)
-    pub const DEV_FUND: ErbAmount = ErbAmount { ions: 20_000_000 * 100_000_000 };
+    pub const DEV_FUND: ErbAmount = ErbAmount {
+        ions: 20_000_000 * 100_000_000,
+    };
 
     // Ecosystem Fund (20M ERB)
-    pub const ECO_FUND: ErbAmount = ErbAmount { ions: 20_000_000 * 100_000_000 };
+    pub const ECO_FUND: ErbAmount = ErbAmount {
+        ions: 20_000_000 * 100_000_000,
+    };
 
     // Treasury (10M ERB)
-    pub const TREASURY: ErbAmount = ErbAmount { ions: 10_000_000 * 100_000_000 };
+    pub const TREASURY: ErbAmount = ErbAmount {
+        ions: 10_000_000 * 100_000_000,
+    };
 
     // Total pré-alocado (100M ERB)
-    pub const TOTAL_PREALLOCATED: ErbAmount = ErbAmount { ions: 100_000_000 * 100_000_000 };
+    pub const TOTAL_PREALLOCATED: ErbAmount = ErbAmount {
+        ions: 100_000_000 * 100_000_000,
+    };
 
     // Supply inicial total (1B ERB)
-    pub const INITIAL_TOTAL_SUPPLY: ErbAmount = ErbAmount { ions: 1_000_000_000 * 100_000_000 };
+    pub const INITIAL_TOTAL_SUPPLY: ErbAmount = ErbAmount {
+        ions: 1_000_000_000 * 100_000_000,
+    };
 }
 
 #[cfg(test)]
@@ -320,8 +356,14 @@ mod tests {
 
     #[test]
     fn test_string_parsing() {
-        assert_eq!(ErbAmount::from_string("1 ERB").unwrap().to_ions(), 100_000_000);
-        assert_eq!(ErbAmount::from_string("100000000 ion").unwrap().to_ions(), 100_000_000);
+        assert_eq!(
+            ErbAmount::from_string("1 ERB").unwrap().to_ions(),
+            100_000_000
+        );
+        assert_eq!(
+            ErbAmount::from_string("100000000 ion").unwrap().to_ions(),
+            100_000_000
+        );
         assert_eq!(ErbAmount::from_string("1 μERB").unwrap().to_ions(), 100);
     }
 
@@ -334,7 +376,10 @@ mod tests {
 
     #[test]
     fn test_auto_formatting() {
-        assert_eq!(ErbAmount::from_erb(1_500_000.0).format_auto(), "1.500 M-ERB");
+        assert_eq!(
+            ErbAmount::from_erb(1_500_000.0).format_auto(),
+            "1.500 M-ERB"
+        );
         assert_eq!(ErbAmount::from_erb(1.5).format_auto(), "1.50000000 ERB");
         assert_eq!(ErbAmount::from_ions(150).format_auto(), "1.500000 μERB");
         assert_eq!(ErbAmount::from_ions(1).format_auto(), "1 ion");

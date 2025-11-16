@@ -22,7 +22,10 @@ impl ComplianceChecker {
         Self
     }
 
-    pub async fn check_framework(&self, _framework: &super::frameworks::ComplianceFramework) -> Result<super::FrameworkCheckResult> {
+    pub async fn check_framework(
+        &self,
+        _framework: &super::frameworks::ComplianceFramework,
+    ) -> Result<super::FrameworkCheckResult> {
         Ok(super::FrameworkCheckResult {
             framework: super::frameworks::ComplianceFramework::GDPR,
             status: ComplianceStatus::Compliant,

@@ -4,8 +4,8 @@
 //! across all regions and nodes, detecting gaps, duplicates, and ordering
 //! violations that could compromise blockchain integrity.
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -125,7 +125,9 @@ impl SequenceIntegrityVerifier {
     pub async fn start_verification(&self) -> Result<()> {
         let mut is_running = self.is_running.write().await;
         if *is_running {
-            return Err(BlockchainError::Consensus("Sequence integrity verification already running".to_string()));
+            return Err(BlockchainError::Consensus(
+                "Sequence integrity verification already running".to_string(),
+            ));
         }
 
         *is_running = true;
@@ -157,7 +159,9 @@ impl SequenceIntegrityVerifier {
 
             // Add to region-specific sequence
             let mut regions = self.region_sequences.write().await;
-            let region_sequence = regions.entry(entry.region_id.clone()).or_insert_with(VecDeque::new);
+            let region_sequence = regions
+                .entry(entry.region_id.clone())
+                .or_insert_with(VecDeque::new);
             region_sequence.push_back(entry);
 
             // Maintain region sequence size
@@ -169,12 +173,16 @@ impl SequenceIntegrityVerifier {
             let mut metrics = self.integrity_metrics.write().await;
             metrics.total_blocks_verified += 1;
             let verification_time = start_time.elapsed().as_millis() as f64;
-            metrics.average_verification_time_ms = (metrics.average_verification_time_ms + verification_time) / 2.0;
+            metrics.average_verification_time_ms =
+                (metrics.average_verification_time_ms + verification_time) / 2.0;
 
             Ok(true)
         } else {
             // Log violation
-            log::warn!("Block sequence integrity check failed for block {}", entry.height);
+            log::warn!(
+                "Block sequence integrity check failed for block {}",
+                entry.height
+            );
             Ok(false)
         }
     }
@@ -205,7 +213,10 @@ impl SequenceIntegrityVerifier {
         }
 
         // Check 5: Duplicate detection
-        if !self.check_for_duplicates(&canonical, &regions, entry).await? {
+        if !self
+            .check_for_duplicates(&canonical, &regions, entry)
+            .await?
+        {
             return Ok(false);
         }
 
@@ -213,7 +224,11 @@ impl SequenceIntegrityVerifier {
     }
 
     /// Check sequence continuity (no gaps)
-    async fn check_sequence_continuity(&self, canonical: &VecDeque<BlockSequenceEntry>, entry: &BlockSequenceEntry) -> Result<bool> {
+    async fn check_sequence_continuity(
+        &self,
+        canonical: &VecDeque<BlockSequenceEntry>,
+        entry: &BlockSequenceEntry,
+    ) -> Result<bool> {
         if canonical.is_empty() && entry.height == 1 {
             return Ok(true);
         }
@@ -228,7 +243,11 @@ impl SequenceIntegrityVerifier {
                 let gap_size = entry.height - expected_height;
                 if gap_size <= self.config.max_sequence_gap {
                     // Allow small gaps (might be filled later)
-                    log::warn!("Small sequence gap detected: {} blocks at height {}", gap_size, entry.height);
+                    log::warn!(
+                        "Small sequence gap detected: {} blocks at height {}",
+                        gap_size,
+                        entry.height
+                    );
                     Ok(true)
                 } else {
                     // Large gap - violation
@@ -239,8 +258,10 @@ impl SequenceIntegrityVerifier {
                         affected_regions: vec![entry.region_id.clone()],
                         severity: ViolationSeverity::High,
                         detected_at: current_timestamp(),
-                        suggested_action: "Investigate network connectivity and consensus issues".to_string(),
-                    }).await;
+                        suggested_action: "Investigate network connectivity and consensus issues"
+                            .to_string(),
+                    })
+                    .await;
 
                     let mut metrics = self.integrity_metrics.write().await;
                     metrics.gaps_detected += 1;
@@ -252,12 +273,16 @@ impl SequenceIntegrityVerifier {
                 self.record_violation(SequenceViolation {
                     violation_type: ViolationType::OutOfOrderBlock,
                     block_height: entry.height,
-                    description: format!("Block received out of order. Expected height: {}, Got: {}", expected_height, entry.height),
+                    description: format!(
+                        "Block received out of order. Expected height: {}, Got: {}",
+                        expected_height, entry.height
+                    ),
                     affected_regions: vec![entry.region_id.clone()],
                     severity: ViolationSeverity::Medium,
                     detected_at: current_timestamp(),
                     suggested_action: "Check network latency and synchronization".to_string(),
-                }).await;
+                })
+                .await;
 
                 let mut metrics = self.integrity_metrics.write().await;
                 metrics.out_of_order_blocks += 1;
@@ -271,7 +296,11 @@ impl SequenceIntegrityVerifier {
     }
 
     /// Check hash chain integrity
-    async fn check_hash_chain_integrity(&self, canonical: &VecDeque<BlockSequenceEntry>, entry: &BlockSequenceEntry) -> Result<bool> {
+    async fn check_hash_chain_integrity(
+        &self,
+        canonical: &VecDeque<BlockSequenceEntry>,
+        entry: &BlockSequenceEntry,
+    ) -> Result<bool> {
         if canonical.is_empty() && entry.height == 1 {
             // Genesis block - no previous hash to check
             return Ok(true);
@@ -289,8 +318,10 @@ impl SequenceIntegrityVerifier {
                     affected_regions: vec![entry.region_id.clone()],
                     severity: ViolationSeverity::Critical,
                     detected_at: current_timestamp(),
-                    suggested_action: "Immediate investigation required - potential chain fork".to_string(),
-                }).await;
+                    suggested_action: "Immediate investigation required - potential chain fork"
+                        .to_string(),
+                })
+                .await;
 
                 let mut metrics = self.integrity_metrics.write().await;
                 metrics.hash_mismatches += 1;
@@ -303,7 +334,11 @@ impl SequenceIntegrityVerifier {
     }
 
     /// Check timestamp ordering
-    async fn check_timestamp_ordering(&self, canonical: &VecDeque<BlockSequenceEntry>, entry: &BlockSequenceEntry) -> Result<bool> {
+    async fn check_timestamp_ordering(
+        &self,
+        canonical: &VecDeque<BlockSequenceEntry>,
+        entry: &BlockSequenceEntry,
+    ) -> Result<bool> {
         if let Some(last_block) = canonical.back() {
             if entry.timestamp >= last_block.timestamp {
                 Ok(true)
@@ -313,12 +348,16 @@ impl SequenceIntegrityVerifier {
                 self.record_violation(SequenceViolation {
                     violation_type: ViolationType::TimestampAnomaly,
                     block_height: entry.height,
-                    description: format!("Block timestamp {}ms earlier than previous block", time_diff),
+                    description: format!(
+                        "Block timestamp {}ms earlier than previous block",
+                        time_diff
+                    ),
                     affected_regions: vec![entry.region_id.clone()],
                     severity: ViolationSeverity::Medium,
                     detected_at: current_timestamp(),
                     suggested_action: "Check system clock synchronization".to_string(),
-                }).await;
+                })
+                .await;
 
                 Ok(false)
             }
@@ -328,7 +367,11 @@ impl SequenceIntegrityVerifier {
     }
 
     /// Check cross-region consistency
-    async fn check_cross_region_consistency(&self, regions: &HashMap<String, VecDeque<BlockSequenceEntry>>, entry: &BlockSequenceEntry) -> Result<bool> {
+    async fn check_cross_region_consistency(
+        &self,
+        regions: &HashMap<String, VecDeque<BlockSequenceEntry>>,
+        entry: &BlockSequenceEntry,
+    ) -> Result<bool> {
         let mut region_heights = Vec::new();
 
         for (region_id, sequence) in regions.iter() {
@@ -349,12 +392,16 @@ impl SequenceIntegrityVerifier {
             self.record_violation(SequenceViolation {
                 violation_type: ViolationType::RegionDivergence,
                 block_height: entry.height,
-                description: format!("Region divergence detected. Max height: {}, Min height: {}", max_height, min_height),
+                description: format!(
+                    "Region divergence detected. Max height: {}, Min height: {}",
+                    max_height, min_height
+                ),
                 affected_regions: region_heights.into_iter().map(|(id, _)| id).collect(),
                 severity: ViolationSeverity::High,
                 detected_at: current_timestamp(),
                 suggested_action: "Check network connectivity between regions".to_string(),
-            }).await;
+            })
+            .await;
 
             return Ok(false);
         }
@@ -363,21 +410,31 @@ impl SequenceIntegrityVerifier {
     }
 
     /// Check for duplicate blocks
-    async fn check_for_duplicates(&self, canonical: &VecDeque<BlockSequenceEntry>, regions: &HashMap<String, VecDeque<BlockSequenceEntry>>, entry: &BlockSequenceEntry) -> Result<bool> {
+    async fn check_for_duplicates(
+        &self,
+        canonical: &VecDeque<BlockSequenceEntry>,
+        regions: &HashMap<String, VecDeque<BlockSequenceEntry>>,
+        entry: &BlockSequenceEntry,
+    ) -> Result<bool> {
         let block_hash = self.calculate_block_hash(entry);
 
         // Check canonical sequence
         for existing in canonical.iter() {
-            if self.calculate_block_hash(existing) == block_hash && existing.height != entry.height {
+            if self.calculate_block_hash(existing) == block_hash && existing.height != entry.height
+            {
                 self.record_violation(SequenceViolation {
                     violation_type: ViolationType::DuplicateBlock,
                     block_height: entry.height,
-                    description: format!("Duplicate block detected with same hash as block {}", existing.height),
+                    description: format!(
+                        "Duplicate block detected with same hash as block {}",
+                        existing.height
+                    ),
                     affected_regions: vec![entry.region_id.clone()],
                     severity: ViolationSeverity::Critical,
                     detected_at: current_timestamp(),
                     suggested_action: "Investigate potential replay attack".to_string(),
-                }).await;
+                })
+                .await;
 
                 let mut metrics = self.integrity_metrics.write().await;
                 metrics.duplicates_detected += 1;
@@ -389,16 +446,22 @@ impl SequenceIntegrityVerifier {
         // Check region sequences
         for (region_id, sequence) in regions.iter() {
             for existing in sequence.iter() {
-                if self.calculate_block_hash(existing) == block_hash && existing.height != entry.height {
+                if self.calculate_block_hash(existing) == block_hash
+                    && existing.height != entry.height
+                {
                     self.record_violation(SequenceViolation {
                         violation_type: ViolationType::DuplicateBlock,
                         block_height: entry.height,
-                        description: format!("Duplicate block detected in region {} with same hash as block {}", region_id, existing.height),
+                        description: format!(
+                            "Duplicate block detected in region {} with same hash as block {}",
+                            region_id, existing.height
+                        ),
                         affected_regions: vec![entry.region_id.clone(), region_id.clone()],
                         severity: ViolationSeverity::Critical,
                         detected_at: current_timestamp(),
                         suggested_action: "Cross-region investigation required".to_string(),
-                    }).await;
+                    })
+                    .await;
 
                     let mut metrics = self.integrity_metrics.write().await;
                     metrics.duplicates_detected += 1;
@@ -421,8 +484,10 @@ impl SequenceIntegrityVerifier {
         }
 
         // Calculate penalty based on violations
-        let total_violations = metrics.gaps_detected + metrics.duplicates_detected +
-                              metrics.out_of_order_blocks + metrics.hash_mismatches;
+        let total_violations = metrics.gaps_detected
+            + metrics.duplicates_detected
+            + metrics.out_of_order_blocks
+            + metrics.hash_mismatches;
 
         let violation_rate = total_violations as f64 / metrics.total_blocks_verified as f64;
 

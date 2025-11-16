@@ -1,32 +1,32 @@
 // src/core/dex.rs
 
 use crate::core::{Address, Hash, State};
-use crate::utils::error::{Result, BlockchainError};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 /// DEX Configuration
 #[derive(Debug, Clone)]
 pub struct DEXConfig {
-    pub trading_fee: u64,           // Fee in basis points (e.g., 30 = 0.3%)
-    pub min_order_size: u64,        // Minimum order size
-    pub max_order_size: u64,        // Maximum order size
-    pub price_precision: u8,        // Decimal places for prices
-    pub amount_precision: u8,       // Decimal places for amounts
-    pub order_expiry_blocks: u64,   // Order expiry in blocks
+    pub trading_fee: u64,         // Fee in basis points (e.g., 30 = 0.3%)
+    pub min_order_size: u64,      // Minimum order size
+    pub max_order_size: u64,      // Maximum order size
+    pub price_precision: u8,      // Decimal places for prices
+    pub amount_precision: u8,     // Decimal places for amounts
+    pub order_expiry_blocks: u64, // Order expiry in blocks
 }
 
 impl Default for DEXConfig {
     fn default() -> Self {
         Self {
-            trading_fee: 30,        // 0.3% fee
-            min_order_size: 1000,   // Minimum 1000 units
+            trading_fee: 30,               // 0.3% fee
+            min_order_size: 1000,          // Minimum 1000 units
             max_order_size: 1_000_000_000, // Maximum 1B units
-            price_precision: 8,     // 8 decimal places
-            amount_precision: 6,    // 6 decimal places
-            order_expiry_blocks: 1000, // ~8 hours at 30s blocks
+            price_precision: 8,            // 8 decimal places
+            amount_precision: 6,           // 6 decimal places
+            order_expiry_blocks: 1000,     // ~8 hours at 30s blocks
         }
     }
 }
@@ -34,8 +34,8 @@ impl Default for DEXConfig {
 /// Trading Pair (Token Pair)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TradingPair {
-    pub base_token: Address,    // Token being bought/sold
-    pub quote_token: Address,   // Token used as reference (usually stablecoin)
+    pub base_token: Address,  // Token being bought/sold
+    pub quote_token: Address, // Token used as reference (usually stablecoin)
     pub pair_id: Hash,
 }
 
@@ -67,25 +67,25 @@ impl TradingPair {
 /// Order Types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OrderType {
-    Limit,      // Limit order with specific price
-    Market,     // Market order (fill at best available price)
+    Limit,  // Limit order with specific price
+    Market, // Market order (fill at best available price)
 }
 
 /// Order Sides
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum OrderSide {
-    Buy,        // Buy base token with quote token
-    Sell,       // Sell base token for quote token
+    Buy,  // Buy base token with quote token
+    Sell, // Sell base token for quote token
 }
 
 /// Order Status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OrderStatus {
-    Pending,    // Order placed, waiting for matching
-    Partial,    // Partially filled
-    Filled,     // Completely filled
-    Cancelled,  // Cancelled by user
-    Expired,    // Expired due to time limit
+    Pending,   // Order placed, waiting for matching
+    Partial,   // Partially filled
+    Filled,    // Completely filled
+    Cancelled, // Cancelled by user
+    Expired,   // Expired due to time limit
 }
 
 /// Trading Order
@@ -183,7 +183,7 @@ impl Order {
     pub fn fill(&mut self, fill_amount: u64) -> Result<()> {
         if fill_amount > self.remaining_amount {
             return Err(BlockchainError::InvalidTransaction(
-                "Fill amount exceeds remaining amount".to_string()
+                "Fill amount exceeds remaining amount".to_string(),
             ));
         }
 
@@ -257,10 +257,16 @@ impl OrderBook {
 
         match (&order.side, &order.order_type) {
             (OrderSide::Buy, OrderType::Limit) => {
-                self.bids.entry(entry.price).or_insert(VecDeque::new()).push_back(entry);
+                self.bids
+                    .entry(entry.price)
+                    .or_insert(VecDeque::new())
+                    .push_back(entry);
             }
             (OrderSide::Sell, OrderType::Limit) => {
-                self.asks.entry(entry.price).or_insert(VecDeque::new()).push_back(entry);
+                self.asks
+                    .entry(entry.price)
+                    .or_insert(VecDeque::new())
+                    .push_back(entry);
             }
             _ => {} // Market orders handled separately
         }
@@ -305,10 +311,14 @@ impl OrderBook {
     /// Get market depth at price level
     pub fn depth_at_price(&self, price: u64, side: &OrderSide) -> u64 {
         match side {
-            OrderSide::Buy => self.bids.get(&price)
+            OrderSide::Buy => self
+                .bids
+                .get(&price)
                 .map(|orders| orders.iter().map(|o| o.amount).sum())
                 .unwrap_or(0),
-            OrderSide::Sell => self.asks.get(&price)
+            OrderSide::Sell => self
+                .asks
+                .get(&price)
                 .map(|orders| orders.iter().map(|o| o.amount).sum())
                 .unwrap_or(0),
         }
@@ -325,13 +335,19 @@ pub struct LiquidityPool {
     pub reserve_b: u64,
     pub total_liquidity: u64,
     pub liquidity_providers: HashMap<Address, u64>, // Provider -> liquidity tokens
-    pub fee: u64, // Fee in basis points
+    pub fee: u64,                                   // Fee in basis points
     pub created_at: u64,
 }
 
 impl LiquidityPool {
     /// Create new liquidity pool
-    pub fn new(token_a: Address, token_b: Address, amount_a: u64, amount_b: u64, creator: Address) -> Self {
+    pub fn new(
+        token_a: Address,
+        token_b: Address,
+        amount_a: u64,
+        amount_b: u64,
+        creator: Address,
+    ) -> Self {
         let pool_id = Self::generate_pool_id(&token_a, &token_b);
         let mut liquidity_providers = HashMap::new();
         liquidity_providers.insert(creator, amount_a + amount_b); // Initial liquidity
@@ -358,10 +374,15 @@ impl LiquidityPool {
     }
 
     /// Add liquidity to pool
-    pub fn add_liquidity(&mut self, provider: Address, amount_a: u64, amount_b: u64) -> Result<u64> {
+    pub fn add_liquidity(
+        &mut self,
+        provider: Address,
+        amount_a: u64,
+        amount_b: u64,
+    ) -> Result<u64> {
         if amount_a == 0 || amount_b == 0 {
             return Err(BlockchainError::InvalidTransaction(
-                "Cannot add zero liquidity".to_string()
+                "Cannot add zero liquidity".to_string(),
             ));
         }
 
@@ -371,8 +392,10 @@ impl LiquidityPool {
             amount_a + amount_b
         } else {
             // Proportional to existing reserves
-            let liquidity_a = (amount_a as u128 * self.total_liquidity as u128) / self.reserve_a as u128;
-            let liquidity_b = (amount_b as u128 * self.total_liquidity as u128) / self.reserve_b as u128;
+            let liquidity_a =
+                (amount_a as u128 * self.total_liquidity as u128) / self.reserve_a as u128;
+            let liquidity_b =
+                (amount_b as u128 * self.total_liquidity as u128) / self.reserve_b as u128;
             liquidity_a.min(liquidity_b) as u64
         };
 
@@ -386,20 +409,24 @@ impl LiquidityPool {
     }
 
     /// Remove liquidity from pool
-    pub fn remove_liquidity(&mut self, provider: &Address, liquidity_amount: u64) -> Result<(u64, u64)> {
-        let provider_liquidity = self.liquidity_providers.get(provider)
-            .copied()
-            .unwrap_or(0);
+    pub fn remove_liquidity(
+        &mut self,
+        provider: &Address,
+        liquidity_amount: u64,
+    ) -> Result<(u64, u64)> {
+        let provider_liquidity = self.liquidity_providers.get(provider).copied().unwrap_or(0);
 
         if provider_liquidity < liquidity_amount {
             return Err(BlockchainError::InvalidTransaction(
-                "Insufficient liquidity tokens".to_string()
+                "Insufficient liquidity tokens".to_string(),
             ));
         }
 
         // Calculate token amounts to return
-        let amount_a = (liquidity_amount as u128 * self.reserve_a as u128) / self.total_liquidity as u128;
-        let amount_b = (liquidity_amount as u128 * self.reserve_b as u128) / self.total_liquidity as u128;
+        let amount_a =
+            (liquidity_amount as u128 * self.reserve_a as u128) / self.total_liquidity as u128;
+        let amount_b =
+            (liquidity_amount as u128 * self.reserve_b as u128) / self.total_liquidity as u128;
 
         self.reserve_a -= amount_a as u64;
         self.reserve_b -= amount_b as u64;
@@ -414,7 +441,7 @@ impl LiquidityPool {
     pub fn get_swap_amount_out(&self, amount_in: u64, token_in: &Address) -> Result<u64> {
         if token_in != &self.token_a && token_in != &self.token_b {
             return Err(BlockchainError::InvalidTransaction(
-                "Token not in pool".to_string()
+                "Token not in pool".to_string(),
             ));
         }
 
@@ -487,7 +514,7 @@ impl DEXManager {
 
         if self.trading_pairs.contains_key(&pair_id) {
             return Err(BlockchainError::InvalidTransaction(
-                "Trading pair already exists".to_string()
+                "Trading pair already exists".to_string(),
             ));
         }
 
@@ -512,14 +539,18 @@ impl DEXManager {
     ) -> Result<Hash> {
         // Validate inputs
         if amount < self.config.min_order_size || amount > self.config.max_order_size {
-            return Err(BlockchainError::InvalidTransaction(
-                format!("Order amount must be between {} and {}",
-                    self.config.min_order_size, self.config.max_order_size)
-            ));
+            return Err(BlockchainError::InvalidTransaction(format!(
+                "Order amount must be between {} and {}",
+                self.config.min_order_size, self.config.max_order_size
+            )));
         }
 
-        let pair = self.trading_pairs.get(pair_id)
-            .ok_or_else(|| BlockchainError::InvalidTransaction("Trading pair not found".to_string()))?
+        let pair = self
+            .trading_pairs
+            .get(pair_id)
+            .ok_or_else(|| {
+                BlockchainError::InvalidTransaction("Trading pair not found".to_string())
+            })?
             .clone();
 
         // Check trader balance (TODO: implement actual balance checking)
@@ -529,7 +560,15 @@ impl DEXManager {
         };
 
         // Create order
-        let mut order = Order::new_limit(trader, pair, side, amount, price, current_height, &self.config);
+        let mut order = Order::new_limit(
+            trader,
+            pair,
+            side,
+            amount,
+            price,
+            current_height,
+            &self.config,
+        );
         let order_id = order.order_id;
 
         // Try to match order immediately
@@ -553,8 +592,12 @@ impl DEXManager {
             }
         }
 
-        log::info!("Placed limit order {} for {} amount at price {}",
-            order_id.to_hex(), amount, price);
+        log::info!(
+            "Placed limit order {} for {} amount at price {}",
+            order_id.to_hex(),
+            amount,
+            price
+        );
 
         Ok(order_id)
     }
@@ -568,8 +611,12 @@ impl DEXManager {
         amount: u64,
         current_height: u64,
     ) -> Result<Hash> {
-        let pair = self.trading_pairs.get(pair_id)
-            .ok_or_else(|| BlockchainError::InvalidTransaction("Trading pair not found".to_string()))?
+        let pair = self
+            .trading_pairs
+            .get(pair_id)
+            .ok_or_else(|| {
+                BlockchainError::InvalidTransaction("Trading pair not found".to_string())
+            })?
             .clone();
 
         // Create market order
@@ -586,21 +633,26 @@ impl DEXManager {
 
         self.orders.insert(order_id, order);
 
-        log::info!("Placed market order {} for {} amount",
-            order_id.to_hex(), amount);
+        log::info!(
+            "Placed market order {} for {} amount",
+            order_id.to_hex(),
+            amount
+        );
 
         Ok(order_id)
     }
 
     /// Cancel order
     pub async fn cancel_order(&mut self, order_id: &Hash, trader: &Address) -> Result<()> {
-        let order = self.orders.get_mut(order_id)
+        let order = self
+            .orders
+            .get_mut(order_id)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Order not found".to_string()))?;
 
         // Verify ownership
         if &order.trader != trader {
             return Err(BlockchainError::InvalidTransaction(
-                "Not order owner".to_string()
+                "Not order owner".to_string(),
             ));
         }
 
@@ -635,10 +687,17 @@ impl DEXManager {
         let target_prices: Vec<u64> = if let Some(limit_price) = order.price {
             if is_buy_order {
                 // Buy order: match at ask prices <= limit_price
-                opposite_book.range(..=limit_price).rev().map(|(p, _)| *p).collect()
+                opposite_book
+                    .range(..=limit_price)
+                    .rev()
+                    .map(|(p, _)| *p)
+                    .collect()
             } else {
                 // Sell order: match at bid prices >= limit_price
-                opposite_book.range(limit_price..).map(|(p, _)| *p).collect()
+                opposite_book
+                    .range(limit_price..)
+                    .map(|(p, _)| *p)
+                    .collect()
             }
         } else {
             // Market order: match at best available prices
@@ -652,8 +711,11 @@ impl DEXManager {
         for price in target_prices {
             if let Some(orders_at_price) = opposite_book.get_mut(&price) {
                 while let Some(opposite_order_entry) = orders_at_price.front() {
-                    if let Some(opposite_order) = self.orders.get_mut(&opposite_order_entry.order_id) {
-                        let match_amount = order.remaining_amount.min(opposite_order.remaining_amount);
+                    if let Some(opposite_order) =
+                        self.orders.get_mut(&opposite_order_entry.order_id)
+                    {
+                        let match_amount =
+                            order.remaining_amount.min(opposite_order.remaining_amount);
 
                         if match_amount > 0 {
                             // Fill both orders
@@ -704,7 +766,7 @@ impl DEXManager {
     ) -> Result<Hash> {
         if amount_a == 0 || amount_b == 0 {
             return Err(BlockchainError::InvalidTransaction(
-                "Cannot create pool with zero liquidity".to_string()
+                "Cannot create pool with zero liquidity".to_string(),
             ));
         }
 
@@ -713,7 +775,7 @@ impl DEXManager {
 
         if self.liquidity_pools.contains_key(&pool_id) {
             return Err(BlockchainError::InvalidTransaction(
-                "Pool already exists".to_string()
+                "Pool already exists".to_string(),
             ));
         }
 
@@ -732,12 +794,18 @@ impl DEXManager {
         amount_a: u64,
         amount_b: u64,
     ) -> Result<u64> {
-        let pool = self.liquidity_pools.get_mut(pool_id)
+        let pool = self
+            .liquidity_pools
+            .get_mut(pool_id)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Pool not found".to_string()))?;
 
         let liquidity_minted = pool.add_liquidity(provider, amount_a, amount_b)?;
 
-        log::info!("Added {} liquidity to pool {}", liquidity_minted, pool_id.to_hex());
+        log::info!(
+            "Added {} liquidity to pool {}",
+            liquidity_minted,
+            pool_id.to_hex()
+        );
 
         Ok(liquidity_minted)
     }
@@ -749,13 +817,20 @@ impl DEXManager {
         provider: &Address,
         liquidity_amount: u64,
     ) -> Result<(u64, u64)> {
-        let pool = self.liquidity_pools.get_mut(pool_id)
+        let pool = self
+            .liquidity_pools
+            .get_mut(pool_id)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Pool not found".to_string()))?;
 
         let (amount_a, amount_b) = pool.remove_liquidity(provider, liquidity_amount)?;
 
-        log::info!("Removed {} liquidity from pool {}: {} token_a, {} token_b",
-            liquidity_amount, pool_id.to_hex(), amount_a, amount_b);
+        log::info!(
+            "Removed {} liquidity from pool {}: {} token_a, {} token_b",
+            liquidity_amount,
+            pool_id.to_hex(),
+            amount_a,
+            amount_b
+        );
 
         Ok((amount_a, amount_b))
     }
@@ -767,15 +842,25 @@ impl DEXManager {
         amount_in: u64,
         token_in: Address,
     ) -> Result<u64> {
-        let pool = self.liquidity_pools.get_mut(pool_id)
+        let pool = self
+            .liquidity_pools
+            .get_mut(pool_id)
             .ok_or_else(|| BlockchainError::InvalidTransaction("Pool not found".to_string()))?;
 
         let amount_out = pool.swap(amount_in, &token_in)?;
 
-        log::info!("Swapped {} {} for {} {} in pool {}",
-            amount_in, token_in.as_str(), amount_out,
-            if token_in == pool.token_a { pool.token_b.as_str() } else { pool.token_a.as_str() },
-            pool_id.to_hex());
+        log::info!(
+            "Swapped {} {} for {} {} in pool {}",
+            amount_in,
+            token_in.as_str(),
+            amount_out,
+            if token_in == pool.token_a {
+                pool.token_b.as_str()
+            } else {
+                pool.token_a.as_str()
+            },
+            pool_id.to_hex()
+        );
 
         Ok(amount_out)
     }
@@ -805,11 +890,11 @@ impl DEXManager {
         DEXStats {
             total_trading_pairs: self.trading_pairs.len(),
             total_orders: self.orders.len(),
-            active_orders: self.orders.values()
-                .filter(|o| o.is_active())
-                .count(),
+            active_orders: self.orders.values().filter(|o| o.is_active()).count(),
             total_liquidity_pools: self.liquidity_pools.len(),
-            total_liquidity_locked: self.liquidity_pools.values()
+            total_liquidity_locked: self
+                .liquidity_pools
+                .values()
                 .map(|p| p.reserve_a + p.reserve_b)
                 .sum(),
         }
@@ -868,10 +953,14 @@ mod tests {
         let config = DEXConfig::default();
         let mut dex = DEXManager::new(config, state);
 
-        let base_token = Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
-        let quote_token = Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string());
+        let base_token =
+            Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
+        let quote_token =
+            Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string());
 
-        let pair_id = dex.add_trading_pair(base_token.clone(), quote_token.clone()).unwrap();
+        let pair_id = dex
+            .add_trading_pair(base_token.clone(), quote_token.clone())
+            .unwrap();
 
         let pair = dex.get_trading_pair(&pair_id).unwrap();
         assert_eq!(pair.base_token, base_token);
@@ -884,20 +973,19 @@ mod tests {
         let config = DEXConfig::default();
         let mut dex = DEXManager::new(config, state);
 
-        let base_token = Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
-        let quote_token = Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string());
-        let trader = Address::new_unchecked("0x0000000000000000000000000000000000000003".to_string());
+        let base_token =
+            Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
+        let quote_token =
+            Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string());
+        let trader =
+            Address::new_unchecked("0x0000000000000000000000000000000000000003".to_string());
 
         let pair_id = dex.add_trading_pair(base_token, quote_token).unwrap();
 
-        let order_id = dex.place_limit_order(
-            trader,
-            &pair_id,
-            OrderSide::Buy,
-            10000,
-            100,
-            1000,
-        ).await.unwrap();
+        let order_id = dex
+            .place_limit_order(trader, &pair_id, OrderSide::Buy, 10000, 100, 1000)
+            .await
+            .unwrap();
 
         let order = dex.get_order(&order_id).unwrap();
         assert_eq!(order.amount, 10000);
@@ -911,17 +999,17 @@ mod tests {
         let config = DEXConfig::default();
         let mut dex = DEXManager::new(config, state);
 
-        let token_a = Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
-        let token_b = Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string());
-        let creator = Address::new_unchecked("0x0000000000000000000000000000000000000003".to_string());
+        let token_a =
+            Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
+        let token_b =
+            Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string());
+        let creator =
+            Address::new_unchecked("0x0000000000000000000000000000000000000003".to_string());
 
-        let pool_id = dex.create_liquidity_pool(
-            token_a,
-            token_b,
-            100000,
-            100000,
-            creator,
-        ).await.unwrap();
+        let pool_id = dex
+            .create_liquidity_pool(token_a, token_b, 100000, 100000, creator)
+            .await
+            .unwrap();
 
         let pool = dex.get_liquidity_pool(&pool_id).unwrap();
         assert_eq!(pool.reserve_a, 100000);
@@ -935,17 +1023,17 @@ mod tests {
         let config = DEXConfig::default();
         let mut dex = DEXManager::new(config, state);
 
-        let token_a = Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
-        let token_b = Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string());
-        let creator = Address::new_unchecked("0x0000000000000000000000000000000000000003".to_string());
+        let token_a =
+            Address::new_unchecked("0x0000000000000000000000000000000000000001".to_string());
+        let token_b =
+            Address::new_unchecked("0x0000000000000000000000000000000000000002".to_string());
+        let creator =
+            Address::new_unchecked("0x0000000000000000000000000000000000000003".to_string());
 
-        let pool_id = dex.create_liquidity_pool(
-            token_a.clone(),
-            token_b,
-            100000,
-            100000,
-            creator,
-        ).await.unwrap();
+        let pool_id = dex
+            .create_liquidity_pool(token_a.clone(), token_b, 100000, 100000, creator)
+            .await
+            .unwrap();
 
         // Test swap calculation
         let pool = dex.get_liquidity_pool(&pool_id).unwrap();

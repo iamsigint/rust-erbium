@@ -35,11 +35,13 @@ impl MetricsService {
     pub fn new(config: MetricsConfig) -> Self {
         // Configurar o exportador Prometheus
         let builder = PrometheusBuilder::new();
-        let handle = builder.install_recorder().expect("install prometheus recorder");
-        
+        let handle = builder
+            .install_recorder()
+            .expect("install prometheus recorder");
+
         Self { handle, config }
     }
-    
+
     /// Inicia o servidor de métricas
     pub fn start_server(&self) -> Result<(), Box<dyn std::error::Error>> {
         let metrics_addr = self.config.listen_addr;
@@ -54,39 +56,39 @@ impl MetricsService {
         log::info!("Metrics server started at {}", metrics_addr);
         Ok(())
     }
-    
+
     /// Registra métricas padrão
     pub fn register_default_metrics(&self) {
         // Contadores
         register_counter!("block_count");
         register_counter!("transaction_count");
         register_counter!("network_message_count");
-        
+
         // Gauges
         register_gauge!("block_height");
         register_gauge!("peer_count");
         register_gauge!("memory_usage_bytes");
-        
+
         // Histogramas
         register_histogram!("block_time");
         register_histogram!("transaction_processing_time");
     }
-    
+
     /// Incrementa um contador
     pub fn increment_counter(&self, name: &'static str, value: u64) {
         counter!(name, value);
     }
-    
+
     /// Define um valor para um gauge
     pub fn set_gauge(&self, name: &'static str, value: f64) {
         gauge!(name, value);
     }
-    
+
     /// Registra um valor em um histograma
     pub fn observe_histogram(&self, name: &'static str, value: f64) {
         histogram!(name, value);
     }
-    
+
     /// Registra métricas do sistema
     pub fn register_system_metrics(&self) {
         // Registrar métricas do sistema a cada 15 segundos
@@ -96,7 +98,7 @@ impl MetricsService {
                 // Exemplo: registrar uso de memória
                 // Em uma implementação real, você usaria uma biblioteca como sysinfo
                 gauge!("memory_usage_bytes", 1000.0);
-                
+
                 // Dormir por 15 segundos
                 std::thread::sleep(Duration::from_secs(15));
             }

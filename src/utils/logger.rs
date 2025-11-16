@@ -1,16 +1,16 @@
-use log::{LevelFilter, SetLoggerError, Level};
+use log::{Level, LevelFilter, SetLoggerError};
 use log4rs::{
     append::console::ConsoleAppender,
     append::file::FileAppender,
     config::{Appender, Config, Root},
-    encode::pattern::PatternEncoder,
     encode::json::JsonEncoder,
+    encode::pattern::PatternEncoder,
     Handle,
 };
-use serde::{Serialize, Deserialize};
-use std::sync::OnceLock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 
 static LOG_HANDLE: OnceLock<Handle> = OnceLock::new();
 static LOG_METRICS: OnceLock<Mutex<LogMetrics>> = OnceLock::new();
@@ -52,14 +52,14 @@ pub fn setup_logger() -> Result<(), SetLoggerError> {
     // Console appender with structured format
     let stdout = ConsoleAppender::builder()
         .encoder(Box::new(PatternEncoder::new(
-            "{d(%Y-%m-%d %H:%M:%S)} {h({l})} [{T}] {M} - {m}{n}"
+            "{d(%Y-%m-%d %H:%M:%S)} {h({l})} [{T}] {M} - {m}{n}",
         )))
         .build();
 
     // File appender with detailed format
     let logfile = FileAppender::builder()
         .encoder(Box::new(PatternEncoder::new(
-            "{d(%Y-%m-%d %H:%M:%S%.3f)} {l} [{T}] {M}:{L} - {m}{n}"
+            "{d(%Y-%m-%d %H:%M:%S%.3f)} {l} [{T}] {M}:{L} - {m}{n}",
         )))
         .build("logs/erbium.log")
         .expect("Failed to create log file");
@@ -96,13 +96,13 @@ pub fn set_log_level(level: LevelFilter) -> Result<(), Box<dyn std::error::Error
         // Create new config with updated log level
         let stdout = ConsoleAppender::builder()
             .encoder(Box::new(PatternEncoder::new(
-                "{d(%Y-%m-%d %H:%M:%S)} {h({l})} [{T}] {M} - {m}{n}"
+                "{d(%Y-%m-%d %H:%M:%S)} {h({l})} [{T}] {M} - {m}{n}",
             )))
             .build();
 
         let logfile = FileAppender::builder()
             .encoder(Box::new(PatternEncoder::new(
-                "{d(%Y-%m-%d %H:%M:%S%.3f)} {l} [{T}] {M}:{L} - {m}{n}"
+                "{d(%Y-%m-%d %H:%M:%S%.3f)} {l} [{T}] {M}:{L} - {m}{n}",
             )))
             .build("logs/erbium.log")
             .expect("Failed to create log file");
@@ -133,15 +133,17 @@ pub fn set_log_level(level: LevelFilter) -> Result<(), Box<dyn std::error::Error
 
 /// Get current log metrics
 pub fn get_log_metrics() -> Option<LogMetrics> {
-    LOG_METRICS.get().and_then(|metrics| {
-        metrics.lock().ok().map(|m| m.clone())
-    })
+    LOG_METRICS
+        .get()
+        .and_then(|metrics| metrics.lock().ok().map(|m| m.clone()))
 }
 
 /// Reset log metrics
 pub fn reset_log_metrics() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(metrics) = LOG_METRICS.get() {
-        let mut m = metrics.lock().map_err(|e| format!("Failed to lock metrics: {}", e))?;
+        let mut m = metrics
+            .lock()
+            .map_err(|e| format!("Failed to lock metrics: {}", e))?;
         *m = LogMetrics::new();
         log::info!("Log metrics reset");
     }
@@ -149,7 +151,12 @@ pub fn reset_log_metrics() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Log a structured event with additional context
-pub fn log_structured(level: Level, _module: &str, message: &str, context: Option<HashMap<String, String>>) {
+pub fn log_structured(
+    level: Level,
+    _module: &str,
+    message: &str,
+    context: Option<HashMap<String, String>>,
+) {
     match level {
         Level::Error => {
             if let Some(ctx) = context {
@@ -197,9 +204,25 @@ pub fn log_performance(operation: &str, duration_ms: f64, success: bool) {
     context.insert("success".to_string(), success.to_string());
 
     if success {
-        log_structured(Level::Info, "performance", &format!("Operation '{}' completed in {:.2}ms", operation, duration_ms), Some(context));
+        log_structured(
+            Level::Info,
+            "performance",
+            &format!(
+                "Operation '{}' completed in {:.2}ms",
+                operation, duration_ms
+            ),
+            Some(context),
+        );
     } else {
-        log_structured(Level::Warn, "performance", &format!("Operation '{}' failed after {:.2}ms", operation, duration_ms), Some(context));
+        log_structured(
+            Level::Warn,
+            "performance",
+            &format!(
+                "Operation '{}' failed after {:.2}ms",
+                operation, duration_ms
+            ),
+            Some(context),
+        );
     }
 }
 
@@ -217,7 +240,12 @@ pub fn log_security_event(event_type: &str, details: &str, severity: &str) {
 }
 
 /// Log blockchain events
-pub fn log_blockchain_event(event_type: &str, details: &str, block_number: Option<u64>, tx_hash: Option<String>) {
+pub fn log_blockchain_event(
+    event_type: &str,
+    details: &str,
+    block_number: Option<u64>,
+    tx_hash: Option<String>,
+) {
     let mut context = HashMap::new();
     context.insert("event_type".to_string(), event_type.to_string());
     if let Some(block) = block_number {

@@ -1,6 +1,6 @@
 //! Common types for bridge operations
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Bridge message
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::hash::Hash;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // Optimized cache key for better hashing performance
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -198,7 +198,8 @@ impl Cache {
 
     fn evict_by_memory(&mut self, needed_bytes: usize) {
         while self.current_memory_bytes + needed_bytes > self.max_memory_mb * 1024 * 1024
-              && !self.lru_queue.is_empty() {
+            && !self.lru_queue.is_empty()
+        {
             self.evict_lru();
         }
     }
@@ -273,7 +274,10 @@ pub fn create_shared_cache(max_size: usize) -> SharedCache {
 }
 
 pub fn create_shared_cache_with_memory_limit(max_size: usize, max_memory_mb: usize) -> SharedCache {
-    Arc::new(RwLock::new(Cache::with_memory_limit(max_size, max_memory_mb)))
+    Arc::new(RwLock::new(Cache::with_memory_limit(
+        max_size,
+        max_memory_mb,
+    )))
 }
 
 // Performance monitoring
@@ -332,12 +336,15 @@ impl CacheMonitor {
         }
 
         if hit_ratio > 0.95 {
-            recommendations.push("Cache is very effective, consider optimizing memory usage".to_string());
+            recommendations
+                .push("Cache is very effective, consider optimizing memory usage".to_string());
         }
 
         if let Some(latest) = self.stats_history.last() {
             if latest.evictions > latest.hits / 10 {
-                recommendations.push("High eviction rate detected, consider increasing cache size".to_string());
+                recommendations.push(
+                    "High eviction rate detected, consider increasing cache size".to_string(),
+                );
             }
         }
 

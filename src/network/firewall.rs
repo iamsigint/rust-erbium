@@ -1,7 +1,7 @@
 // src/network/firewall.rs
 
-use libp2p::PeerId;
 use crate::utils::error::Result;
+use libp2p::PeerId;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
@@ -118,14 +118,16 @@ impl NetworkFirewall {
     /// Checks if a connection should be allowed
     pub fn check_connection(&mut self, ip: &IpAddr, peer_id: Option<&PeerId>) -> Result<bool> {
         // Check whitelist
-        if self.whitelisted_ips.contains(ip) || 
-           (peer_id.is_some() && self.whitelisted_peers.contains(peer_id.unwrap())) {
+        if self.whitelisted_ips.contains(ip)
+            || (peer_id.is_some() && self.whitelisted_peers.contains(peer_id.unwrap()))
+        {
             return Ok(true);
         }
 
         // Check bans
-        if self.banned_ips.contains(ip) || 
-           (peer_id.is_some() && self.banned_peers.contains(peer_id.unwrap())) {
+        if self.banned_ips.contains(ip)
+            || (peer_id.is_some() && self.banned_peers.contains(peer_id.unwrap()))
+        {
             return Ok(false);
         }
 
@@ -159,7 +161,7 @@ impl NetworkFirewall {
     /// Checks rate limit for an IP
     fn check_rate_limit(&mut self, ip: &IpAddr, max: u32, window: Duration) -> Result<bool> {
         let now = Instant::now();
-        
+
         if let Some((count, timestamp)) = self.connection_counters.get_mut(ip) {
             if now.duration_since(*timestamp) > window {
                 // Reset counter if window expired
@@ -183,17 +185,25 @@ impl NetworkFirewall {
     }
 
     /// Processes a security event
-    pub fn process_security_event(&mut self, ip: IpAddr, peer_id: Option<PeerId>, event: SecurityEvent) -> Result<()> {
+    pub fn process_security_event(
+        &mut self,
+        ip: IpAddr,
+        peer_id: Option<PeerId>,
+        event: SecurityEvent,
+    ) -> Result<()> {
         match event {
             SecurityEvent::ConnectionFlood { count, window } => {
                 if count > self.global_rate_limit.0 * 2 {
                     // Temporarily ban due to connection flood
                     self.ban_ip(ip, &format!("Connection flood: {} in {:?}", count, window));
                     if let Some(peer) = peer_id {
-                        self.ban_peer(peer, &format!("Connection flood: {} in {:?}", count, window));
+                        self.ban_peer(
+                            peer,
+                            &format!("Connection flood: {} in {:?}", count, window),
+                        );
                     }
                 }
-            },
+            }
             SecurityEvent::MalformedMessage { count } => {
                 if count > 5 {
                     // Ban after multiple malformed messages
@@ -202,18 +212,18 @@ impl NetworkFirewall {
                         self.ban_peer(peer, &format!("Malformed messages: {}", count));
                     }
                 }
-            },
+            }
             SecurityEvent::SuspiciousValidatorBehavior { description } => {
                 log::warn!("Suspicious validator behavior detected: {}", description);
                 // Logic to report to slashing system could be implemented here
-            },
+            }
             SecurityEvent::EclipseAttackAttempt => {
                 log::warn!("Possible eclipse attack attempt detected from {}", ip);
                 self.ban_ip(ip, "Eclipse attack attempt");
                 if let Some(peer) = peer_id {
                     self.ban_peer(peer, "Eclipse attack attempt");
                 }
-            },
+            }
             SecurityEvent::RepeatedInvalidTransactions { count } => {
                 if count > 10 {
                     log::warn!("Multiple invalid transactions from {}: {}", ip, count);
@@ -224,7 +234,7 @@ impl NetworkFirewall {
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -236,9 +246,8 @@ impl NetworkFirewall {
     /// Cleans expired counters
     pub fn clean_expired_counters(&mut self) {
         let now = Instant::now();
-        self.connection_counters.retain(|_, (_, timestamp)| {
-            now.duration_since(*timestamp) <= self.global_rate_limit.1
-        });
+        self.connection_counters
+            .retain(|_, (_, timestamp)| now.duration_since(*timestamp) <= self.global_rate_limit.1);
     }
 
     /// Returns the number of banned IPs

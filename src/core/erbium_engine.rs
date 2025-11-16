@@ -1,4 +1,4 @@
- //! Erbium Engine - The heart of Blockchain 4.0
+//! Erbium Engine - The heart of Blockchain 4.0
 //!
 //! Coordination layer that orchestrates innovations:
 //! - Multi-Layer Transactions (SegWit-inspired)
@@ -7,19 +7,18 @@
 //!
 //! Implemented in Q1 2026 to unlock 100,000+ TPS
 
-use crate::core::{
-    MultiLayerTransaction, QuantumAccumulator,
-    Hash, Address, BlockchainError, Result,
-    CrossChainProof, Layer2Commit, AiPrediction, TemporalCommitment
-};
 use crate::core::transaction_templates::TransactionTemplate;
 use crate::core::transaction_templates::TransactionTemplateManager;
+use crate::core::{
+    Address, AiPrediction, BlockchainError, CrossChainProof, Hash, Layer2Commit,
+    MultiLayerTransaction, QuantumAccumulator, Result, TemporalCommitment,
+};
 use crate::storage::blockchain_storage::BlockchainStorage;
+use serde::Deserialize;
 use std::collections::HashMap;
+use std::fs;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::Deserialize;
-use std::fs;
 use toml;
 
 #[derive(Debug, Deserialize)]
@@ -46,9 +45,16 @@ struct GasBehavior {
 
 #[derive(Debug)]
 pub enum ExecutionResult {
-    Success { gas_used: u64, state_changes: Vec<StateChange> },
-    Reverted { reason: String },
-    Invalid { error: BlockchainError },
+    Success {
+        gas_used: u64,
+        state_changes: Vec<StateChange>,
+    },
+    Reverted {
+        reason: String,
+    },
+    Invalid {
+        error: BlockchainError,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -104,8 +110,8 @@ impl Default for GasConfig {
             transfer_gas_per_byte: 68,        // Per data byte
             signature_verification_gas: 3450, // Per signature
             quantum_proof_gas: 15000,         // Per quantum proof
-            cross_chain_gas: 50000,          // Cross-chain operations
-            layer2_gas: 10000,               // Layer-2 channels
+            cross_chain_gas: 50000,           // Cross-chain operations
+            layer2_gas: 10000,                // Layer-2 channels
         }
     }
 }
@@ -131,15 +137,18 @@ impl ErbiumEngine {
     async fn load_gas_config() -> Result<GasConfig> {
         let config_path = "config/gas.toml";
 
-        let config_content = fs::read_to_string(config_path)
-            .map_err(|e| BlockchainError::Network(format!("Critical: Missing gas config - {}", e)))?;
+        let config_content = fs::read_to_string(config_path).map_err(|e| {
+            BlockchainError::Network(format!("Critical: Missing gas config - {}", e))
+        })?;
 
-        let gas_config: GasConfigFile = toml::from_str(&config_content)
-            .map_err(|e| BlockchainError::Network(format!("Critical: Invalid gas config - {}", e)))?;
+        let gas_config: GasConfigFile = toml::from_str(&config_content).map_err(|e| {
+            BlockchainError::Network(format!("Critical: Invalid gas config - {}", e))
+        })?;
 
         // Validate gas limits
         if gas_config.config.panic_on_missing_config
-           && (gas_config.gas.base_transaction_gas == 0 || gas_config.gas.cross_chain_gas == 0) {
+            && (gas_config.gas.base_transaction_gas == 0 || gas_config.gas.cross_chain_gas == 0)
+        {
             panic!("CRITICAL SECURITY: Invalid gas configuration detected - refusing to start");
         }
 
@@ -156,9 +165,12 @@ impl ErbiumEngine {
     /// Main entry point - Process Multi-Layer Transaction
     pub async fn process_transaction(
         &self,
-        transaction: &MultiLayerTransaction
+        transaction: &MultiLayerTransaction,
     ) -> Result<ExecutionResult> {
-        log::info!("Processing multi-layer transaction: {}", transaction.core_data.from);
+        log::info!(
+            "Processing multi-layer transaction: {}",
+            transaction.core_data.from
+        );
 
         // Coordination across all layers (our innovation!)
         let result = self.coordinate_execution(transaction).await?;
@@ -182,10 +194,7 @@ impl ErbiumEngine {
     }
 
     /// Core coordination logic - Our Multi-Layer Innovation
-    async fn coordinate_execution(
-        &self,
-        tx: &MultiLayerTransaction
-    ) -> Result<ExecutionResult> {
+    async fn coordinate_execution(&self, tx: &MultiLayerTransaction) -> Result<ExecutionResult> {
         // Step 1: Validate all layers in coordinated way
         if let Err(e) = self.validate_transaction_structure(tx).await {
             return Ok(ExecutionResult::Invalid { error: e });
@@ -206,9 +215,12 @@ impl ErbiumEngine {
                 self.execute_template_transaction(tx, gas_calculation).await
             }
             TransactionType::CrossChainTransfers => {
-                self.execute_cross_chain_transaction(tx, gas_calculation).await
+                self.execute_cross_chain_transaction(tx, gas_calculation)
+                    .await
             }
-            _ => Err(BlockchainError::InvalidTransaction("Unsupported transaction type".to_string())),
+            _ => Err(BlockchainError::InvalidTransaction(
+                "Unsupported transaction type".to_string(),
+            )),
         }
     }
 
@@ -217,7 +229,9 @@ impl ErbiumEngine {
         // TODO: Implement full multi-layer validation
         // For now, basic core validation
         if tx.core_data.amount == 0 && tx.core_data.data.is_empty() {
-            return Err(BlockchainError::InvalidTransaction("Zero amount with no data".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Zero amount with no data".to_string(),
+            ));
         }
 
         // Check sender balance (will be implemented)
@@ -230,7 +244,10 @@ impl ErbiumEngine {
     }
 
     /// Calculate gas across all layers
-    async fn calculate_multi_layer_gas(&self, tx: &MultiLayerTransaction) -> Result<GasCalculation> {
+    async fn calculate_multi_layer_gas(
+        &self,
+        tx: &MultiLayerTransaction,
+    ) -> Result<GasCalculation> {
         let mut gas = GasCalculation {
             computational_gas: self.gas_config.base_transaction_gas,
             storage_gas: 0,
@@ -239,15 +256,20 @@ impl ErbiumEngine {
         };
 
         // Core transaction gas
-        gas.computational_gas += tx.core_data.data.len() as u64 * self.gas_config.transfer_gas_per_byte;
+        gas.computational_gas +=
+            tx.core_data.data.len() as u64 * self.gas_config.transfer_gas_per_byte;
 
         // Witness layer gas (signatures, proofs)
-        gas.verification_gas += tx.witness_layer.signatures.len() as u64 * self.gas_config.signature_verification_gas;
-        gas.verification_gas += tx.witness_layer.quantum_proofs.len() as u64 * self.gas_config.quantum_proof_gas;
+        gas.verification_gas +=
+            tx.witness_layer.signatures.len() as u64 * self.gas_config.signature_verification_gas;
+        gas.verification_gas +=
+            tx.witness_layer.quantum_proofs.len() as u64 * self.gas_config.quantum_proof_gas;
 
         // Metadata layer gas (cross-chain, layer2)
-        gas.verification_gas += tx.metadata_layer.cross_chain_proofs.len() as u64 * self.gas_config.cross_chain_gas;
-        gas.verification_gas += tx.metadata_layer.layer2_commits.len() as u64 * self.gas_config.layer2_gas;
+        gas.verification_gas +=
+            tx.metadata_layer.cross_chain_proofs.len() as u64 * self.gas_config.cross_chain_gas;
+        gas.verification_gas +=
+            tx.metadata_layer.layer2_commits.len() as u64 * self.gas_config.layer2_gas;
 
         // Calculate total
         gas.total = gas.computational_gas + gas.storage_gas + gas.verification_gas;
@@ -259,7 +281,7 @@ impl ErbiumEngine {
     async fn execute_transfer_transaction(
         &self,
         tx: &MultiLayerTransaction,
-        gas_calc: GasCalculation
+        gas_calc: GasCalculation,
     ) -> Result<ExecutionResult> {
         // Check fee payment
         let fee = tx.core_data.gas_limit * tx.core_data.gas_price;
@@ -267,7 +289,7 @@ impl ErbiumEngine {
 
         if sender_balance < tx.core_data.amount + fee {
             return Ok(ExecutionResult::Reverted {
-                reason: "Insufficient balance for transfer + fee".to_string()
+                reason: "Insufficient balance for transfer + fee".to_string(),
             });
         }
 
@@ -279,7 +301,9 @@ impl ErbiumEngine {
             let sender_exists = accounts.get(&tx.core_data.from).is_some();
 
             if !sender_exists {
-                return Err(BlockchainError::InvalidTransaction("Sender account doesn't exist".to_string()));
+                return Err(BlockchainError::InvalidTransaction(
+                    "Sender account doesn't exist".to_string(),
+                ));
             }
 
             // Execute transfer
@@ -291,11 +315,14 @@ impl ErbiumEngine {
             // Handle receiver
             let is_new_receiver = accounts.get(&tx.core_data.to).is_none();
             if is_new_receiver {
-                accounts.insert(tx.core_data.to.clone(), Account {
-                    address: tx.core_data.to.clone(),
-                    balance: tx.core_data.amount,
-                    nonce: 0,
-                });
+                accounts.insert(
+                    tx.core_data.to.clone(),
+                    Account {
+                        address: tx.core_data.to.clone(),
+                        balance: tx.core_data.amount,
+                        nonce: 0,
+                    },
+                );
             } else {
                 if let Some(receiver_account) = accounts.get_mut(&tx.core_data.to) {
                     receiver_account.balance += tx.core_data.amount;
@@ -303,14 +330,12 @@ impl ErbiumEngine {
             }
 
             // Capture state changes
-            vec![
-                StateChange {
-                    account: tx.core_data.from.clone(),
-                    old_balance: sender_balance,
-                    new_balance: sender_balance - tx.core_data.amount - fee,
-                    transaction_hash: tx.hash.clone(),
-                }
-            ]
+            vec![StateChange {
+                account: tx.core_data.from.clone(),
+                old_balance: sender_balance,
+                new_balance: sender_balance - tx.core_data.amount - fee,
+                transaction_hash: tx.hash.clone(),
+            }]
         };
 
         // Update quantum accumulator with transaction hash
@@ -332,13 +357,14 @@ impl ErbiumEngine {
     async fn execute_template_transaction(
         &self,
         tx: &MultiLayerTransaction,
-        gas_calc: GasCalculation
+        gas_calc: GasCalculation,
     ) -> Result<ExecutionResult> {
         // Get template from transaction
         let template_id = Hash::new(b"template_id"); // TODO: Extract from tx data
 
         let template_manager = self.template_manager.read().await;
-        let template = template_manager.get_template(&template_id)
+        let template = template_manager
+            .get_template(&template_id)
             .ok_or_else(|| BlockchainError::TemplateNotFound)?;
 
         // Execute template workflow
@@ -349,7 +375,7 @@ impl ErbiumEngine {
 
         Ok(ExecutionResult::Success {
             gas_used: gas_calc.total + 5000, // Extra gas for template processing
-            state_changes: vec![], // TODO: Implement state changes
+            state_changes: vec![],           // TODO: Implement state changes
         })
     }
 
@@ -357,7 +383,7 @@ impl ErbiumEngine {
     async fn execute_cross_chain_transaction(
         &self,
         tx: &MultiLayerTransaction,
-        gas_calc: GasCalculation
+        gas_calc: GasCalculation,
     ) -> Result<ExecutionResult> {
         // Validate cross-chain proofs
         for proof in &tx.metadata_layer.cross_chain_proofs {
@@ -377,7 +403,7 @@ impl ErbiumEngine {
     async fn execute_contract_transaction(
         &self,
         tx: &MultiLayerTransaction,
-        gas_calc: GasCalculation
+        gas_calc: GasCalculation,
     ) -> Result<ExecutionResult> {
         // TODO: Implement contract execution
         // This would integrate with our VM module
@@ -438,7 +464,11 @@ impl ErbiumEngine {
     }
 
     /// Process template transfers
-    async fn process_template_transfers(&self, _template: &TransactionTemplate, _tx: &MultiLayerTransaction) -> Result<()> {
+    async fn process_template_transfers(
+        &self,
+        _template: &TransactionTemplate,
+        _tx: &MultiLayerTransaction,
+    ) -> Result<()> {
         // TODO: Implement template transfer processing logic
         Ok(())
     }
@@ -464,7 +494,9 @@ impl ErbiumEngine {
     /// Update quantum accumulator
     pub async fn update_accumulator(&self, data: Vec<u8>, timestamp: u64) -> Result<usize> {
         let mut accumulator = self.accumulator.write().await;
-        accumulator.add_element(Hash::new(&data), timestamp).map(|_| 0)
+        accumulator
+            .add_element(Hash::new(&data), timestamp)
+            .map(|_| 0)
     }
 
     /// Get accumulator proof
@@ -498,7 +530,9 @@ impl ErbiumEngine {
         let mut accounts = self.account_state.write().await;
 
         if accounts.contains_key(&address) {
-            return Err(BlockchainError::InvalidTransaction("Account already exists".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Account already exists".to_string(),
+            ));
         }
 
         let account_info = Account {
@@ -518,13 +552,13 @@ impl ErbiumEngine {
         &self,
         from: Address,
         to: Address,
-        amount: u64
+        amount: u64,
     ) -> Result<ExecutionResult> {
         // Check sender balance first (read-only access)
         let sender_balance = self.get_account_balance(&from).await?;
         if sender_balance < amount {
             return Ok(ExecutionResult::Reverted {
-                reason: "Insufficient balance".to_string()
+                reason: "Insufficient balance".to_string(),
             });
         }
 
@@ -540,11 +574,14 @@ impl ErbiumEngine {
             if accounts.contains_key(&to) {
                 accounts.get_mut(&to).unwrap().balance += amount;
             } else {
-                accounts.insert(to.clone(), Account {
-                    address: to.clone(),
-                    balance: amount,
-                    nonce: 0,
-                });
+                accounts.insert(
+                    to.clone(),
+                    Account {
+                        address: to.clone(),
+                        balance: amount,
+                        nonce: 0,
+                    },
+                );
             }
 
             // Return state changes
@@ -634,7 +671,8 @@ mod tests {
         let engine = ErbiumEngine::new(data_dir).await.unwrap();
 
         // Create addresses
-        let alice = Address::new_unchecked("0x000000000000000000000000000000000000000A".to_string());
+        let alice =
+            Address::new_unchecked("0x000000000000000000000000000000000000000A".to_string());
         let bob = Address::new_unchecked("0x000000000000000000000000000000000000000B".to_string());
 
         // Create Alice account with 1000 ERB
@@ -645,11 +683,17 @@ mod tests {
         assert_eq!(alice_account.balance, 1000);
 
         // Transfer 500 ERB from Alice to Bob
-        let result = engine.transfer(alice.clone(), bob.clone(), 500).await.unwrap();
+        let result = engine
+            .transfer(alice.clone(), bob.clone(), 500)
+            .await
+            .unwrap();
 
         // Check result
         match result {
-            ExecutionResult::Success { gas_used, state_changes } => {
+            ExecutionResult::Success {
+                gas_used,
+                state_changes,
+            } => {
                 assert_eq!(gas_used, 21000); // Base gas
                 assert_eq!(state_changes.len(), 1);
                 assert_eq!(state_changes[0].account, alice);

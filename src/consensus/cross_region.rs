@@ -4,8 +4,8 @@
 //! geographic regions, ensuring global consistency while maintaining
 //! regional autonomy and performance.
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -116,12 +116,17 @@ impl CrossRegionConsensus {
     pub async fn start(&self) -> Result<()> {
         let mut is_running = self.is_running.write().await;
         if *is_running {
-            return Err(BlockchainError::Consensus("Cross-region consensus already running".to_string()));
+            return Err(BlockchainError::Consensus(
+                "Cross-region consensus already running".to_string(),
+            ));
         }
 
         *is_running = true;
 
-        log::info!("Cross-region consensus started for region {}", self.config.region_id);
+        log::info!(
+            "Cross-region consensus started for region {}",
+            self.config.region_id
+        );
         Ok(())
     }
 
@@ -136,15 +141,18 @@ impl CrossRegionConsensus {
 
         // Add to local pending proposals
         let mut pending = self.pending_proposals.write().await;
-        pending.insert(block_height, BlockProposalState {
+        pending.insert(
             block_height,
-            block_hash: block_hash.clone(),
-            proposer_region: self.config.region_id.clone(),
-            votes: HashMap::new(),
-            start_time: current_timestamp(),
-            consensus_reached: false,
-            consensus_result: None,
-        });
+            BlockProposalState {
+                block_height,
+                block_hash: block_hash.clone(),
+                proposer_region: self.config.region_id.clone(),
+                votes: HashMap::new(),
+                start_time: current_timestamp(),
+                consensus_reached: false,
+                consensus_result: None,
+            },
+        );
 
         // Broadcast proposal to other regions
         self.broadcast_message(proposal).await?;
@@ -154,7 +162,12 @@ impl CrossRegionConsensus {
     }
 
     /// Vote on a block proposal
-    pub async fn vote_on_block(&self, block_height: u64, block_hash: Vec<u8>, approve: bool) -> Result<()> {
+    pub async fn vote_on_block(
+        &self,
+        block_height: u64,
+        block_hash: Vec<u8>,
+        approve: bool,
+    ) -> Result<()> {
         let vote = CrossRegionMessage::BlockVote {
             block_height,
             block_hash: block_hash.clone(),
@@ -167,7 +180,9 @@ impl CrossRegionConsensus {
         let mut pending = self.pending_proposals.write().await;
         if let Some(proposal) = pending.get_mut(&block_height) {
             if proposal.block_hash == block_hash {
-                proposal.votes.insert(self.config.region_id.clone(), approve);
+                proposal
+                    .votes
+                    .insert(self.config.region_id.clone(), approve);
             }
         }
 
@@ -180,17 +195,54 @@ impl CrossRegionConsensus {
     /// Process incoming cross-region message
     pub async fn process_message(&self, message: CrossRegionMessage) -> Result<()> {
         match message {
-            CrossRegionMessage::BlockProposal { block_height, block_hash, proposer_region, timestamp } => {
-                self.process_block_proposal(block_height, block_hash, proposer_region, timestamp).await?;
+            CrossRegionMessage::BlockProposal {
+                block_height,
+                block_hash,
+                proposer_region,
+                timestamp,
+            } => {
+                self.process_block_proposal(block_height, block_hash, proposer_region, timestamp)
+                    .await?;
             }
-            CrossRegionMessage::BlockVote { block_height, block_hash, voter_region, vote, timestamp } => {
-                self.process_block_vote(block_height, block_hash, voter_region, vote, timestamp).await?;
+            CrossRegionMessage::BlockVote {
+                block_height,
+                block_hash,
+                voter_region,
+                vote,
+                timestamp,
+            } => {
+                self.process_block_vote(block_height, block_hash, voter_region, vote, timestamp)
+                    .await?;
             }
-            CrossRegionMessage::RegionStatus { region_id, health_score, active_validators, last_block_height, timestamp } => {
-                self.update_region_status(region_id, health_score, active_validators, last_block_height, timestamp).await?;
+            CrossRegionMessage::RegionStatus {
+                region_id,
+                health_score,
+                active_validators,
+                last_block_height,
+                timestamp,
+            } => {
+                self.update_region_status(
+                    region_id,
+                    health_score,
+                    active_validators,
+                    last_block_height,
+                    timestamp,
+                )
+                .await?;
             }
-            CrossRegionMessage::EmergencyConsensus { reason, affected_regions, emergency_measures, timestamp } => {
-                self.handle_emergency_consensus(reason, affected_regions, emergency_measures, timestamp).await?;
+            CrossRegionMessage::EmergencyConsensus {
+                reason,
+                affected_regions,
+                emergency_measures,
+                timestamp,
+            } => {
+                self.handle_emergency_consensus(
+                    reason,
+                    affected_regions,
+                    emergency_measures,
+                    timestamp,
+                )
+                .await?;
             }
         }
 
@@ -204,7 +256,8 @@ impl CrossRegionConsensus {
 
         if let Some(proposal) = pending.get(&block_height) {
             // Count active regions
-            let active_regions: Vec<_> = region_states.values()
+            let active_regions: Vec<_> = region_states
+                .values()
                 .filter(|state| state.is_active)
                 .collect();
 
@@ -213,14 +266,18 @@ impl CrossRegionConsensus {
             }
 
             // Calculate required quorum (weighted by region health and priority)
-            let total_weight: f64 = active_regions.iter()
+            let total_weight: f64 = active_regions
+                .iter()
                 .map(|state| state.health_score * self.get_region_weight(&state.region_id))
                 .sum();
 
-            let approve_weight: f64 = proposal.votes.iter()
+            let approve_weight: f64 = proposal
+                .votes
+                .iter()
                 .filter_map(|(region_id, &vote)| {
                     if vote {
-                        region_states.get(region_id)
+                        region_states
+                            .get(region_id)
                             .map(|state| state.health_score * self.get_region_weight(region_id))
                     } else {
                         None
@@ -228,10 +285,13 @@ impl CrossRegionConsensus {
                 })
                 .sum();
 
-            let reject_weight: f64 = proposal.votes.iter()
+            let reject_weight: f64 = proposal
+                .votes
+                .iter()
                 .filter_map(|(region_id, &vote)| {
                     if !vote {
-                        region_states.get(region_id)
+                        region_states
+                            .get(region_id)
                             .map(|state| state.health_score * self.get_region_weight(region_id))
                     } else {
                         None
@@ -264,15 +324,18 @@ impl CrossRegionConsensus {
         let region_states = self.region_states.read().await;
         let pending = self.pending_proposals.read().await;
 
-        let active_regions = region_states.values()
+        let active_regions = region_states
+            .values()
             .filter(|state| state.is_active)
             .count();
 
         let total_regions = region_states.len();
         let average_health = if total_regions > 0 {
-            region_states.values()
+            region_states
+                .values()
                 .map(|state| state.health_score)
-                .sum::<f64>() / total_regions as f64
+                .sum::<f64>()
+                / total_regions as f64
         } else {
             0.0
         };
@@ -290,23 +353,38 @@ impl CrossRegionConsensus {
     }
 
     // Internal methods
-    async fn process_block_proposal(&self, block_height: u64, block_hash: Vec<u8>, proposer_region: String, timestamp: u64) -> Result<()> {
+    async fn process_block_proposal(
+        &self,
+        block_height: u64,
+        block_hash: Vec<u8>,
+        proposer_region: String,
+        timestamp: u64,
+    ) -> Result<()> {
         // Add to pending proposals if not already present
         let mut pending = self.pending_proposals.write().await;
-        pending.entry(block_height).or_insert_with(|| BlockProposalState {
-            block_height,
-            block_hash: block_hash.clone(),
-            proposer_region,
-            votes: HashMap::new(),
-            start_time: timestamp,
-            consensus_reached: false,
-            consensus_result: None,
-        });
+        pending
+            .entry(block_height)
+            .or_insert_with(|| BlockProposalState {
+                block_height,
+                block_hash: block_hash.clone(),
+                proposer_region,
+                votes: HashMap::new(),
+                start_time: timestamp,
+                consensus_reached: false,
+                consensus_result: None,
+            });
 
         Ok(())
     }
 
-    async fn process_block_vote(&self, block_height: u64, block_hash: Vec<u8>, voter_region: String, vote: bool, _timestamp: u64) -> Result<()> {
+    async fn process_block_vote(
+        &self,
+        block_height: u64,
+        block_hash: Vec<u8>,
+        voter_region: String,
+        vote: bool,
+        _timestamp: u64,
+    ) -> Result<()> {
         let mut pending = self.pending_proposals.write().await;
         if let Some(proposal) = pending.get_mut(&block_height) {
             if proposal.block_hash == block_hash {
@@ -317,19 +395,28 @@ impl CrossRegionConsensus {
         Ok(())
     }
 
-    async fn update_region_status(&self, region_id: String, health_score: f64, active_validators: usize, last_block_height: u64, timestamp: u64) -> Result<()> {
+    async fn update_region_status(
+        &self,
+        region_id: String,
+        health_score: f64,
+        active_validators: usize,
+        last_block_height: u64,
+        timestamp: u64,
+    ) -> Result<()> {
         let mut region_states = self.region_states.write().await;
 
-        let state = region_states.entry(region_id.clone()).or_insert_with(|| RegionState {
-            region_id: region_id.clone(),
-            last_seen: 0,
-            health_score: 100.0,
-            active_validators: 0,
-            last_block_height: 0,
-            consensus_participation: 1.0,
-            average_latency_ms: 0,
-            is_active: true,
-        });
+        let state = region_states
+            .entry(region_id.clone())
+            .or_insert_with(|| RegionState {
+                region_id: region_id.clone(),
+                last_seen: 0,
+                health_score: 100.0,
+                active_validators: 0,
+                last_block_height: 0,
+                consensus_participation: 1.0,
+                average_latency_ms: 0,
+                is_active: true,
+            });
 
         state.last_seen = timestamp;
         state.health_score = health_score;
@@ -340,8 +427,18 @@ impl CrossRegionConsensus {
         Ok(())
     }
 
-    async fn handle_emergency_consensus(&self, reason: String, affected_regions: Vec<String>, _emergency_measures: Vec<String>, _timestamp: u64) -> Result<()> {
-        log::warn!("Emergency consensus triggered: {} for regions {:?}", reason, affected_regions);
+    async fn handle_emergency_consensus(
+        &self,
+        reason: String,
+        affected_regions: Vec<String>,
+        _emergency_measures: Vec<String>,
+        _timestamp: u64,
+    ) -> Result<()> {
+        log::warn!(
+            "Emergency consensus triggered: {} for regions {:?}",
+            reason,
+            affected_regions
+        );
 
         // Implementation would include emergency consensus logic
         // For now, just log the emergency
@@ -442,13 +539,16 @@ mod tests {
         let config = CrossRegionConfig::default();
         let consensus = CrossRegionConsensus::new(config);
 
-        consensus.update_region_status(
-            "test-region".to_string(),
-            95.0,
-            10,
-            100,
-            current_timestamp()
-        ).await.unwrap();
+        consensus
+            .update_region_status(
+                "test-region".to_string(),
+                95.0,
+                10,
+                100,
+                current_timestamp(),
+            )
+            .await
+            .unwrap();
 
         let regions = consensus.region_states.read().await;
         assert!(regions.contains_key("test-region"));

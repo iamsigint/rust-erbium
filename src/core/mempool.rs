@@ -1,33 +1,33 @@
 // src/core/mempool.rs
 
-use crate::core::{Transaction, Hash, Address, State};
-use crate::utils::error::{Result, BlockchainError};
-use std::collections::{HashMap, HashSet, BTreeMap};
+use crate::core::{Address, Hash, State, Transaction};
+use crate::utils::error::{BlockchainError, Result};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Mempool configuration
 #[derive(Debug, Clone)]
 pub struct MempoolConfig {
-    pub max_size: usize,                    // Maximum number of transactions
-    pub max_size_bytes: usize,              // Maximum size in bytes
-    pub min_fee_per_byte: u64,              // Minimum fee per byte
-    pub max_transaction_age: Duration,      // Maximum age before expiration
-    pub cleanup_interval: Duration,         // Cleanup interval
-    pub max_replacements: usize,            // Max replacements per account
+    pub max_size: usize,               // Maximum number of transactions
+    pub max_size_bytes: usize,         // Maximum size in bytes
+    pub min_fee_per_byte: u64,         // Minimum fee per byte
+    pub max_transaction_age: Duration, // Maximum age before expiration
+    pub cleanup_interval: Duration,    // Cleanup interval
+    pub max_replacements: usize,       // Max replacements per account
 }
 
 impl Default for MempoolConfig {
     fn default() -> Self {
         Self {
-            max_size: 50000,                // 50k transactions
-            max_size_bytes: 100 * 1024 * 1024, // 100MB
-            min_fee_per_byte: 1,            // 1 unit per byte minimum
+            max_size: 50000,                                        // 50k transactions
+            max_size_bytes: 100 * 1024 * 1024,                      // 100MB
+            min_fee_per_byte: 1,                                    // 1 unit per byte minimum
             max_transaction_age: Duration::from_secs(24 * 60 * 60), // 24 hours
-            cleanup_interval: Duration::from_secs(60), // 1 minute
-            max_replacements: 5,            // Max 5 replacements per account
+            cleanup_interval: Duration::from_secs(60),              // 1 minute
+            max_replacements: 5, // Max 5 replacements per account
         }
     }
 }
@@ -128,7 +128,9 @@ impl Mempool {
 
         // Check if already exists
         if self.transactions.contains_key(&tx_hash) {
-            return Err(BlockchainError::InvalidTransaction("Transaction already in mempool".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Transaction already in mempool".to_string(),
+            ));
         }
 
         // Validate transaction
@@ -137,7 +139,9 @@ impl Mempool {
         // Check size limits
         let entry = MempoolEntry::new(transaction);
         if self.total_size_bytes + entry.size_bytes > self.config.max_size_bytes {
-            return Err(BlockchainError::InvalidTransaction("Mempool full".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Mempool full".to_string(),
+            ));
         }
 
         if self.transactions.len() >= self.config.max_size {
@@ -148,12 +152,21 @@ impl Mempool {
         // Check account limits
         let account_key = entry.transaction.from.clone();
         let should_remove_oldest = {
-            let account_txs = self.by_account.entry(account_key.clone()).or_insert(HashSet::new());
+            let account_txs = self
+                .by_account
+                .entry(account_key.clone())
+                .or_insert(HashSet::new());
             if account_txs.len() >= self.config.max_replacements {
                 // Find oldest transaction from this account
-                account_txs.iter().min_by_key(|hash| {
-                    self.transactions.get(hash).map(|e| e.received_at).unwrap_or(u64::MAX)
-                }).cloned()
+                account_txs
+                    .iter()
+                    .min_by_key(|hash| {
+                        self.transactions
+                            .get(hash)
+                            .map(|e| e.received_at)
+                            .unwrap_or(u64::MAX)
+                    })
+                    .cloned()
             } else {
                 None
             }
@@ -166,7 +179,10 @@ impl Mempool {
         // Add transaction
         self.transactions.insert(tx_hash, entry.clone());
         self.by_fee.insert((entry.fee_per_byte, tx_hash), tx_hash);
-        self.by_account.entry(account_key).or_insert(HashSet::new()).insert(tx_hash);
+        self.by_account
+            .entry(account_key)
+            .or_insert(HashSet::new())
+            .insert(tx_hash);
         self.total_size_bytes += entry.size_bytes;
 
         log::debug!("Added transaction {} to mempool", tx_hash.to_hex());
@@ -209,7 +225,9 @@ impl Mempool {
 
     /// Get transaction by hash
     pub fn get_transaction(&self, tx_hash: &Hash) -> Option<&Transaction> {
-        self.transactions.get(tx_hash).map(|entry| &entry.transaction)
+        self.transactions
+            .get(tx_hash)
+            .map(|entry| &entry.transaction)
     }
 
     /// Check if transaction exists in mempool
@@ -218,7 +236,11 @@ impl Mempool {
     }
 
     /// Get highest fee transactions for block creation
-    pub fn get_highest_fee_transactions(&self, max_count: usize, max_size: usize) -> Vec<Transaction> {
+    pub fn get_highest_fee_transactions(
+        &self,
+        max_count: usize,
+        max_size: usize,
+    ) -> Vec<Transaction> {
         let mut result = Vec::new();
         let mut current_size = 0;
 
@@ -239,9 +261,11 @@ impl Mempool {
 
     /// Get transactions for a specific account
     pub fn get_account_transactions(&self, account: &Address) -> Vec<&Transaction> {
-        self.by_account.get(account)
+        self.by_account
+            .get(account)
             .map(|tx_hashes| {
-                tx_hashes.iter()
+                tx_hashes
+                    .iter()
                     .filter_map(|hash| self.transactions.get(hash))
                     .map(|entry| &entry.transaction)
                     .collect()
@@ -251,7 +275,9 @@ impl Mempool {
 
     /// Get mempool statistics
     pub fn get_stats(&self) -> MempoolStats {
-        let mut fee_per_byte_values: Vec<u64> = self.transactions.values()
+        let mut fee_per_byte_values: Vec<u64> = self
+            .transactions
+            .values()
             .map(|entry| entry.fee_per_byte)
             .collect();
 
@@ -266,7 +292,9 @@ impl Mempool {
             (min, max, avg)
         };
 
-        let pending_by_account = self.by_account.iter()
+        let pending_by_account = self
+            .by_account
+            .iter()
             .map(|(account, txs)| (account.clone(), txs.len()))
             .collect();
 
@@ -303,20 +331,24 @@ impl Mempool {
         };
 
         if fee_per_byte < self.config.min_fee_per_byte {
-            return Err(BlockchainError::InvalidTransaction(
-                format!("Fee too low: {} per byte, minimum: {}", fee_per_byte, self.config.min_fee_per_byte)
-            ));
+            return Err(BlockchainError::InvalidTransaction(format!(
+                "Fee too low: {} per byte, minimum: {}",
+                fee_per_byte, self.config.min_fee_per_byte
+            )));
         }
 
         // Check against current state
         let state = self.state.read().await;
 
         // Check nonce
-        let expected_nonce = state.get_nonce(&transaction.from)
+        let expected_nonce = state
+            .get_nonce(&transaction.from)
             .map_err(|_| BlockchainError::InvalidTransaction("Account not found".to_string()))?;
 
         if transaction.nonce < expected_nonce {
-            return Err(BlockchainError::InvalidTransaction("Nonce too low".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Nonce too low".to_string(),
+            ));
         }
 
         // Check balance (including pending transactions)
@@ -325,18 +357,23 @@ impl Mempool {
             for tx_hash in account_txs {
                 if let Some(entry) = self.transactions.get(tx_hash) {
                     if entry.transaction.nonce == transaction.nonce {
-                        return Err(BlockchainError::InvalidTransaction("Nonce already used in mempool".to_string()));
+                        return Err(BlockchainError::InvalidTransaction(
+                            "Nonce already used in mempool".to_string(),
+                        ));
                     }
                     total_pending += entry.transaction.amount + entry.transaction.fee;
                 }
             }
         }
 
-        let balance = state.get_balance(&transaction.from)
+        let balance = state
+            .get_balance(&transaction.from)
             .map_err(|_| BlockchainError::InvalidTransaction("Account not found".to_string()))?;
 
         if balance < transaction.amount + transaction.fee + total_pending {
-            return Err(BlockchainError::InvalidTransaction("Insufficient balance".to_string()));
+            return Err(BlockchainError::InvalidTransaction(
+                "Insufficient balance".to_string(),
+            ));
         }
 
         Ok(())
@@ -372,7 +409,8 @@ impl Mempool {
 
     /// Get all pending transactions
     pub fn get_all_transactions(&self) -> Vec<&Transaction> {
-        self.transactions.values()
+        self.transactions
+            .values()
             .map(|entry| &entry.transaction)
             .collect()
     }

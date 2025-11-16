@@ -1,15 +1,15 @@
 pub mod dilithium;
-pub mod zk_proofs;
-pub mod keys;
 pub mod hashing;
+pub mod keys;
 pub mod signatures;
+pub mod zk_proofs;
 
 // Re-export commonly used cryptographic functions
 pub use dilithium::Dilithium;
-pub use zk_proofs::ZkProofs;
-pub use keys::{KeyPair, KeyManager};
 pub use hashing::{HashAlgorithm, Hasher};
-pub use signatures::{SignatureScheme, Signature};
+pub use keys::{KeyManager, KeyPair};
+pub use signatures::{Signature, SignatureScheme};
+pub use zk_proofs::ZkProofs;
 
 use crate::utils::error::Result;
 use serde::{Deserialize, Serialize};
@@ -31,17 +31,17 @@ impl CryptoManager {
             hasher: Hasher::new(),
         })
     }
-    
+
     /// Generate a new post-quantum keypair
     pub fn generate_keypair(&self) -> Result<KeyPair> {
         self.key_manager.generate_dilithium_keypair()
     }
-    
+
     /// Hash data using the configured algorithm
     pub fn hash(&self, data: &[u8]) -> crate::core::types::Hash {
         self.hasher.hash(data)
     }
-    
+
     /// Verify a Dilithium signature
     pub fn verify_signature(
         &self,
@@ -135,8 +135,8 @@ impl QuantumProof {
 /// Schnorr signature for enhanced witness operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchnorrSignature {
-    pub r: Vec<u8>, // Random point commitment
-    pub s: Vec<u8>, // Signature scalar
+    pub r: Vec<u8>,       // Random point commitment
+    pub s: Vec<u8>,       // Signature scalar
     pub pub_key: Vec<u8>, // Public key point
 }
 
@@ -174,7 +174,11 @@ impl ThresholdSignature {
     }
 
     /// Add participant signature
-    pub fn add_signature(&mut self, signature: crate::crypto::signatures::Signature, public_key: Vec<u8>) {
+    pub fn add_signature(
+        &mut self,
+        signature: crate::crypto::signatures::Signature,
+        public_key: Vec<u8>,
+    ) {
         self.signatures.push(signature);
         self.public_keys.push(public_key);
     }

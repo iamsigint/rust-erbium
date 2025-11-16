@@ -1,5 +1,8 @@
-use crate::utils::error::{Result, BlockchainError};
-use bulletproofs::{BulletproofGens, PedersenGens, RangeProof, r1cs::{R1CSProof, Prover, Verifier, LinearCombination}};
+use crate::utils::error::{BlockchainError, Result};
+use bulletproofs::{
+    r1cs::{LinearCombination, Prover, R1CSProof, Verifier},
+    BulletproofGens, PedersenGens, RangeProof,
+};
 use curve25519_dalek_ng::ristretto::CompressedRistretto;
 use curve25519_dalek_ng::scalar::Scalar;
 use merlin::Transcript;
@@ -56,14 +59,14 @@ impl ZkProofs {
     pub fn new() -> Result<Self> {
         let bp_gens = BulletproofGens::new(128, 1);
         let pc_gens = PedersenGens::default();
-        
+
         Ok(Self {
             bp_gens,
             pc_gens,
             circuits: std::collections::HashMap::new(),
         })
     }
-    
+
     pub fn create_range_proof(
         &self,
         value: u64,
@@ -71,7 +74,7 @@ impl ZkProofs {
         bit_length: usize,
     ) -> Result<ZkProof> {
         let mut transcript = Transcript::new(b"RangeProof");
-        
+
         let (proof, commitment) = RangeProof::prove_single(
             &self.bp_gens,
             &self.pc_gens,
@@ -79,13 +82,14 @@ impl ZkProofs {
             value,
             blinding,
             bit_length,
-        ).map_err(|e| BlockchainError::Crypto(format!("Range proof generation failed: {}", e)))?;
-        
+        )
+        .map_err(|e| BlockchainError::Crypto(format!("Range proof generation failed: {}", e)))?;
+
         let proof_data = bincode::serialize(&proof)
             .map_err(|e| BlockchainError::Serialization(e.to_string()))?;
-        
+
         let public_inputs = vec![commitment.as_bytes().to_vec()];
-        
+
         Ok(ZkProof {
             proof_data,
             proof_type: ZkProofType::RangeProof,
@@ -96,30 +100,36 @@ impl ZkProofs {
             output_count: 0,
         })
     }
-    
+
     pub fn verify_range_proof(&self, proof: &ZkProof) -> Result<bool> {
         if proof.proof_type != ZkProofType::RangeProof {
-            return Err(BlockchainError::Crypto("Proof is not a range proof".to_string()));
+            return Err(BlockchainError::Crypto(
+                "Proof is not a range proof".to_string(),
+            ));
         }
-        
+
         if proof.public_inputs.len() != 1 {
-            return Err(BlockchainError::Crypto("Invalid public inputs for range proof".to_string()));
+            return Err(BlockchainError::Crypto(
+                "Invalid public inputs for range proof".to_string(),
+            ));
         }
-        
+
         let range_proof: RangeProof = bincode::deserialize(&proof.proof_data)
             .map_err(|e| BlockchainError::Serialization(e.to_string()))?;
-        
+
         let commitment_bytes = &proof.public_inputs[0];
         if commitment_bytes.len() != 32 {
-            return Err(BlockchainError::Crypto("Invalid commitment length".to_string()));
+            return Err(BlockchainError::Crypto(
+                "Invalid commitment length".to_string(),
+            ));
         }
-        
+
         let mut commitment_array = [0u8; 32];
         commitment_array.copy_from_slice(commitment_bytes);
         let commitment = CompressedRistretto(commitment_array);
-        
+
         let mut transcript = Transcript::new(b"RangeProof");
-        
+
         match range_proof.verify_single(
             &self.bp_gens,
             &self.pc_gens,
@@ -131,7 +141,7 @@ impl ZkProofs {
             Err(_) => Ok(false),
         }
     }
-    
+
     /// Creates a confidential transfer proof using R1CS constraints
     ///
     /// This proof demonstrates that:
@@ -149,12 +159,20 @@ impl ZkProofs {
         output_blindings: &[Scalar],
     ) -> Result<ZkProof> {
         // Parameter validation
-        if input_commitments.len() != input_values.len() || input_values.len() != input_blindings.len() {
-            return Err(BlockchainError::Crypto("Mismatch in input parameters length".to_string()));
+        if input_commitments.len() != input_values.len()
+            || input_values.len() != input_blindings.len()
+        {
+            return Err(BlockchainError::Crypto(
+                "Mismatch in input parameters length".to_string(),
+            ));
         }
 
-        if output_commitments.len() != output_values.len() || output_values.len() != output_blindings.len() {
-            return Err(BlockchainError::Crypto("Mismatch in output parameters length".to_string()));
+        if output_commitments.len() != output_values.len()
+            || output_values.len() != output_blindings.len()
+        {
+            return Err(BlockchainError::Crypto(
+                "Mismatch in output parameters length".to_string(),
+            ));
         }
 
         // Verify input sum equals output sum
@@ -162,7 +180,9 @@ impl ZkProofs {
         let output_sum: u64 = output_values.iter().sum();
 
         if input_sum != output_sum {
-            return Err(BlockchainError::Crypto("Input and output values do not balance".to_string()));
+            return Err(BlockchainError::Crypto(
+                "Input and output values do not balance".to_string(),
+            ));
         }
 
         // For now, create individual range proofs for each value
@@ -180,7 +200,8 @@ impl ZkProofs {
                 value,
                 &blinding,
                 64,
-            ).map_err(|e| BlockchainError::Crypto(format!("Input range proof failed: {}", e)))?;
+            )
+            .map_err(|e| BlockchainError::Crypto(format!("Input range proof failed: {}", e)))?;
 
             all_proofs.push(proof);
             all_commitments.push(commitment);
@@ -196,7 +217,8 @@ impl ZkProofs {
                 value,
                 &blinding,
                 64,
-            ).map_err(|e| BlockchainError::Crypto(format!("Output range proof failed: {}", e)))?;
+            )
+            .map_err(|e| BlockchainError::Crypto(format!("Output range proof failed: {}", e)))?;
 
             all_proofs.push(proof);
             all_commitments.push(commitment);
@@ -222,13 +244,15 @@ impl ZkProofs {
             output_count: output_commitments.len(),
         })
     }
-    
+
     /// Verifies a confidential transfer proof
     ///
     /// Verifies that all range proofs are valid for the given commitments
     pub fn verify_confidential_transfer_proof(&self, proof: &ZkProof) -> Result<bool> {
         if proof.proof_type != ZkProofType::ConfidentialTransferProof {
-            return Err(BlockchainError::Crypto("Proof is not a confidential transfer proof".to_string()));
+            return Err(BlockchainError::Crypto(
+                "Proof is not a confidential transfer proof".to_string(),
+            ));
         }
 
         // Deserialize all range proofs
@@ -236,7 +260,9 @@ impl ZkProofs {
             .map_err(|e| BlockchainError::Serialization(e.to_string()))?;
 
         if all_proofs.len() != proof.public_inputs.len() {
-            return Err(BlockchainError::Crypto("Mismatch between proofs and commitments".to_string()));
+            return Err(BlockchainError::Crypto(
+                "Mismatch between proofs and commitments".to_string(),
+            ));
         }
 
         let mut transcript = Transcript::new(b"ConfidentialTransfer");
@@ -251,7 +277,9 @@ impl ZkProofs {
         for (i, proof_item) in all_proofs.iter().enumerate() {
             let commitment_bytes = &proof.public_inputs[i];
             if commitment_bytes.len() != 32 {
-                return Err(BlockchainError::Crypto("Invalid commitment length".to_string()));
+                return Err(BlockchainError::Crypto(
+                    "Invalid commitment length".to_string(),
+                ));
             }
 
             let mut commitment_array = [0u8; 32];
@@ -275,45 +303,51 @@ impl ZkProofs {
 
         Ok(true)
     }
-    
+
     pub fn register_circuit(&mut self, circuit: ZkCircuit) -> Result<()> {
         if self.circuits.contains_key(&circuit.name) {
-            return Err(BlockchainError::Crypto("Circuit already registered".to_string()));
+            return Err(BlockchainError::Crypto(
+                "Circuit already registered".to_string(),
+            ));
         }
-        
+
         self.circuits.insert(circuit.name.clone(), circuit);
         Ok(())
     }
-    
+
     pub fn get_circuit(&self, name: &str) -> Option<&ZkCircuit> {
         self.circuits.get(name)
     }
-    
+
     pub fn generate_proof_for_circuit(
         &self,
         circuit_name: &str,
         _private_inputs: &[Scalar],
         public_inputs: &[Scalar],
     ) -> Result<ZkProof> {
-        let _circuit = self.circuits.get(circuit_name)
+        let _circuit = self
+            .circuits
+            .get(circuit_name)
             .ok_or_else(|| BlockchainError::Crypto("Circuit not found".to_string()))?;
-        
+
         let mut transcript = Transcript::new(b"CustomCircuit");
         let prover = Prover::new(&self.pc_gens, &mut transcript);
-        
+
         // Allocate variables and add constraints based on circuit
         // This is a simplified implementation
-        
-        let proof = prover.prove(&self.bp_gens)
-            .map_err(|e| BlockchainError::Crypto(format!("Custom circuit proof generation failed: {}", e)))?;
-        
+
+        let proof = prover.prove(&self.bp_gens).map_err(|e| {
+            BlockchainError::Crypto(format!("Custom circuit proof generation failed: {}", e))
+        })?;
+
         let proof_data = bincode::serialize(&proof)
             .map_err(|e| BlockchainError::Serialization(e.to_string()))?;
-        
-        let public_inputs_bytes: Vec<Vec<u8>> = public_inputs.iter()
+
+        let public_inputs_bytes: Vec<Vec<u8>> = public_inputs
+            .iter()
             .map(|scalar| scalar.to_bytes().to_vec())
             .collect();
-        
+
         Ok(ZkProof {
             proof_data,
             proof_type: ZkProofType::Custom(circuit_name.to_string()),
@@ -324,40 +358,46 @@ impl ZkProofs {
             output_count: 0,
         })
     }
-    
+
     pub fn verify_proof_for_circuit(&self, proof: &ZkProof) -> Result<bool> {
-        let _circuit = self.circuits.get(&proof.circuit_id)
+        let _circuit = self
+            .circuits
+            .get(&proof.circuit_id)
             .ok_or_else(|| BlockchainError::Crypto("Circuit not found".to_string()))?;
-        
+
         let r1cs_proof: R1CSProof = bincode::deserialize(&proof.proof_data)
             .map_err(|e| BlockchainError::Serialization(e.to_string()))?;
-        
+
         let mut transcript = Transcript::new(b"CustomCircuit");
         let verifier = Verifier::new(&mut transcript);
-        
+
         // Reconstruct public inputs from bytes
-        let public_inputs: Result<Vec<Scalar>> = proof.public_inputs.iter()
+        let public_inputs: Result<Vec<Scalar>> = proof
+            .public_inputs
+            .iter()
             .map(|bytes| {
                 if bytes.len() == 32 {
                     let mut array = [0u8; 32];
                     array.copy_from_slice(bytes);
                     Ok(Scalar::from_bytes_mod_order(array))
                 } else {
-                    Err(BlockchainError::Crypto("Invalid public input size".to_string()))
+                    Err(BlockchainError::Crypto(
+                        "Invalid public input size".to_string(),
+                    ))
                 }
             })
             .collect();
-        
+
         let _public_inputs = public_inputs?;
-        
+
         // In real implementation, reconstruct circuit constraints
-        
+
         match verifier.verify(&r1cs_proof, &self.pc_gens, &self.bp_gens) {
             Ok(()) => Ok(true),
             Err(_) => Ok(false),
         }
     }
-    
+
     pub fn get_supported_proof_types(&self) -> Vec<ZkProofType> {
         vec![
             ZkProofType::RangeProof,
@@ -399,10 +439,7 @@ impl ZkCircuit {
 
 impl ZkProof {
     /// Generate a ZK proof for the given circuit
-    pub fn generate_proof(
-        public_inputs: &[Vec<u8>],
-        private_inputs: &[Vec<u8>],
-    ) -> Result<Self> {
+    pub fn generate_proof(public_inputs: &[Vec<u8>], private_inputs: &[Vec<u8>]) -> Result<Self> {
         // Simplified implementation
         // In production, use actual ZK proving system
         let proof_data = bincode::serialize(&(public_inputs, private_inputs))
@@ -476,7 +513,7 @@ mod tests {
         let input_blindings = vec![Scalar::random(&mut rand::thread_rng())];
         let output_blindings = vec![
             Scalar::random(&mut rand::thread_rng()),
-            Scalar::random(&mut rand::thread_rng())
+            Scalar::random(&mut rand::thread_rng()),
         ];
 
         // Create mock commitments (simplified for testing)
@@ -484,14 +521,16 @@ mod tests {
         let output_commitments = vec![vec![0u8; 32], vec![0u8; 32]]; // Mock commitments
 
         // Create confidential transfer proof (should succeed for balanced transaction)
-        let proof = zk_proofs.create_confidential_transfer_proof(
-            &input_commitments,
-            &output_commitments,
-            &input_values,
-            &output_values,
-            &input_blindings,
-            &output_blindings,
-        ).unwrap();
+        let proof = zk_proofs
+            .create_confidential_transfer_proof(
+                &input_commitments,
+                &output_commitments,
+                &input_values,
+                &output_values,
+                &input_blindings,
+                &output_blindings,
+            )
+            .unwrap();
 
         // For now, just check that proof was created successfully
         // Full verification would require proper commitment handling

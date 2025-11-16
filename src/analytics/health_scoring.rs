@@ -4,8 +4,8 @@
 //! and generates actionable optimization recommendations based on performance
 //! metrics, predictive analytics, and anomaly detection results.
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -188,7 +188,9 @@ impl HealthScorer {
     pub async fn start_scoring(&self) -> Result<()> {
         let mut is_running = self.is_running.write().await;
         if *is_running {
-            return Err(BlockchainError::Analytics("Health scoring already running".to_string()));
+            return Err(BlockchainError::Analytics(
+                "Health scoring already running".to_string(),
+            ));
         }
 
         *is_running = true;
@@ -198,7 +200,10 @@ impl HealthScorer {
     }
 
     /// Update health score based on current metrics
-    pub async fn update_health_score(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> Result<()> {
+    pub async fn update_health_score(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> Result<()> {
         if !self.config.enable_health_scoring {
             return Ok(());
         }
@@ -229,7 +234,8 @@ impl HealthScorer {
 
         // Generate recommendations if enabled
         if self.config.recommendation_engine_enabled {
-            self.generate_recommendations(&health_score, metrics).await?;
+            self.generate_recommendations(&health_score, metrics)
+                .await?;
         }
 
         Ok(())
@@ -238,7 +244,8 @@ impl HealthScorer {
     /// Get current health score
     pub async fn get_current_health_score(&self) -> Result<HealthScore> {
         let scores = self.previous_scores.read().await;
-        scores.last()
+        scores
+            .last()
             .cloned()
             .ok_or_else(|| BlockchainError::Analytics("No health scores available".to_string()))
     }
@@ -248,7 +255,8 @@ impl HealthScorer {
         let scores = self.previous_scores.read().await;
         let cutoff_time = current_timestamp() - (hours * 3600);
 
-        let history: Vec<HealthScore> = scores.iter()
+        let history: Vec<HealthScore> = scores
+            .iter()
             .filter(|score| score.timestamp >= cutoff_time)
             .cloned()
             .collect();
@@ -257,15 +265,21 @@ impl HealthScorer {
     }
 
     /// Get optimization recommendations
-    pub async fn get_optimization_recommendations(&self) -> Result<Vec<OptimizationRecommendation>> {
+    pub async fn get_optimization_recommendations(
+        &self,
+    ) -> Result<Vec<OptimizationRecommendation>> {
         let recommendations = self.recommendations.read().await;
         Ok(recommendations.clone())
     }
 
     /// Get recommendations by priority
-    pub async fn get_recommendations_by_priority(&self, priority: RecommendationPriority) -> Result<Vec<OptimizationRecommendation>> {
+    pub async fn get_recommendations_by_priority(
+        &self,
+        priority: RecommendationPriority,
+    ) -> Result<Vec<OptimizationRecommendation>> {
         let recommendations = self.recommendations.read().await;
-        let filtered: Vec<OptimizationRecommendation> = recommendations.iter()
+        let filtered: Vec<OptimizationRecommendation> = recommendations
+            .iter()
             .filter(|rec| rec.priority == priority)
             .cloned()
             .collect();
@@ -284,16 +298,22 @@ impl HealthScorer {
         };
 
         let score_volatility = if history.len() > 1 {
-            let variance = history.iter()
+            let variance = history
+                .iter()
                 .map(|s| (s.overall_score - avg_score_24h).powi(2))
-                .sum::<f64>() / history.len() as f64;
+                .sum::<f64>()
+                / history.len() as f64;
             variance.sqrt()
         } else {
             0.0
         };
 
-        let critical_recommendations = self.get_recommendations_by_priority(RecommendationPriority::Critical).await?;
-        let high_recommendations = self.get_recommendations_by_priority(RecommendationPriority::High).await?;
+        let critical_recommendations = self
+            .get_recommendations_by_priority(RecommendationPriority::Critical)
+            .await?;
+        let high_recommendations = self
+            .get_recommendations_by_priority(RecommendationPriority::High)
+            .await?;
 
         Ok(ClusterHealthOverview {
             current_health_score: current_score.overall_score,
@@ -309,7 +329,10 @@ impl HealthScorer {
     }
 
     // Internal scoring methods
-    async fn calculate_component_scores(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> Result<HealthComponents> {
+    async fn calculate_component_scores(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> Result<HealthComponents> {
         // System Performance Score (CPU, Memory, Disk)
         let system_performance = self.calculate_system_performance_score(metrics);
 
@@ -338,7 +361,10 @@ impl HealthScorer {
         })
     }
 
-    fn calculate_system_performance_score(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> f64 {
+    fn calculate_system_performance_score(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> f64 {
         let cpu_score = 100.0 - metrics.cpu_usage_percent;
         let memory_score = 100.0 - metrics.memory_usage_percent;
         let disk_score = 100.0 - metrics.disk_usage_percent;
@@ -347,7 +373,10 @@ impl HealthScorer {
         (cpu_score * 0.5) + (memory_score * 0.3) + (disk_score * 0.2)
     }
 
-    fn calculate_consensus_health_score(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> f64 {
+    fn calculate_consensus_health_score(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> f64 {
         let participation_score = metrics.validator_participation_percent;
         let delay_penalty = (5000.0 - metrics.consensus_delay_ms).max(0.0) / 50.0; // Max 100 points for <5s delay
         let rounds_score = metrics.consensus_rounds_per_second.min(20.0) * 5.0; // Max 100 for 20+ rounds/sec
@@ -355,15 +384,23 @@ impl HealthScorer {
         (participation_score * 0.4) + (delay_penalty.min(100.0) * 0.4) + (rounds_score * 0.2)
     }
 
-    fn calculate_network_stability_score(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> f64 {
+    fn calculate_network_stability_score(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> f64 {
         let latency_score = (200.0 - metrics.average_network_latency_ms).max(0.0) / 2.0; // Max 100 for <200ms
         let bandwidth_score = metrics.network_bandwidth_mbps.min(1000.0) / 10.0; // Max 100 for 1Gbps+
         let packet_loss_score = 100.0 - (metrics.packets_dropped_percent * 1000.0); // Penalty for packet loss
 
-        (latency_score.min(100.0) * 0.4) + (bandwidth_score * 0.3) + (packet_loss_score.max(0.0) * 0.3)
+        (latency_score.min(100.0) * 0.4)
+            + (bandwidth_score * 0.3)
+            + (packet_loss_score.max(0.0) * 0.3)
     }
 
-    fn calculate_security_score(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> f64 {
+    fn calculate_security_score(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> f64 {
         let auth_attempts_penalty = (metrics.failed_auth_attempts as f64 * 10.0).min(50.0); // Max 50 point penalty
         let error_rate_penalty = (metrics.error_rate * 500.0).min(30.0); // Max 30 point penalty
         let security_events_penalty = (metrics.security_events_count as f64 * 5.0).min(20.0); // Max 20 point penalty
@@ -371,8 +408,12 @@ impl HealthScorer {
         100.0 - auth_attempts_penalty - error_rate_penalty - security_events_penalty
     }
 
-    fn calculate_resource_efficiency_score(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> f64 {
-        let throughput_efficiency = metrics.transactions_per_second / metrics.cpu_usage_percent.max(1.0);
+    fn calculate_resource_efficiency_score(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> f64 {
+        let throughput_efficiency =
+            metrics.transactions_per_second / metrics.cpu_usage_percent.max(1.0);
         let cache_efficiency = metrics.cache_hit_ratio * 100.0;
         let queue_efficiency = (1000.0 - metrics.queue_depth as f64).max(0.0) / 10.0; // Max 100 for queue < 1000
 
@@ -384,12 +425,12 @@ impl HealthScorer {
     fn calculate_overall_score(&self, components: &HealthComponents) -> f64 {
         let weights = &self.config.scoring_weights;
 
-        (components.system_performance * weights.system_performance_weight) +
-        (components.consensus_health * weights.consensus_health_weight) +
-        (components.network_stability * weights.network_stability_weight) +
-        (components.security_score * weights.security_score_weight) +
-        (components.resource_efficiency * weights.resource_efficiency_weight) +
-        (components.anomaly_penalty * weights.anomaly_penalty_weight)
+        (components.system_performance * weights.system_performance_weight)
+            + (components.consensus_health * weights.consensus_health_weight)
+            + (components.network_stability * weights.network_stability_weight)
+            + (components.security_score * weights.security_score_weight)
+            + (components.resource_efficiency * weights.resource_efficiency_weight)
+            + (components.anomaly_penalty * weights.anomaly_penalty_weight)
     }
 
     fn determine_health_grade(&self, score: f64) -> HealthGrade {
@@ -415,19 +456,32 @@ impl HealthScorer {
             return HealthTrend::Stable;
         }
 
-        let recent_scores: Vec<f64> = scores.iter().rev().take(10).map(|s| s.overall_score).collect();
+        let recent_scores: Vec<f64> = scores
+            .iter()
+            .rev()
+            .take(10)
+            .map(|s| s.overall_score)
+            .collect();
         let avg_recent = recent_scores.iter().sum::<f64>() / recent_scores.len() as f64;
         let avg_older = if scores.len() > 10 {
-            let older_scores: Vec<f64> = scores.iter().rev().skip(10).take(10).map(|s| s.overall_score).collect();
+            let older_scores: Vec<f64> = scores
+                .iter()
+                .rev()
+                .skip(10)
+                .take(10)
+                .map(|s| s.overall_score)
+                .collect();
             older_scores.iter().sum::<f64>() / older_scores.len() as f64
         } else {
             avg_recent
         };
 
         let change = avg_recent - avg_older;
-        let volatility = recent_scores.iter()
+        let volatility = recent_scores
+            .iter()
             .map(|s| (s - avg_recent).abs())
-            .sum::<f64>() / recent_scores.len() as f64;
+            .sum::<f64>()
+            / recent_scores.len() as f64;
 
         if volatility > 10.0 {
             HealthTrend::Volatile
@@ -440,7 +494,11 @@ impl HealthScorer {
         }
     }
 
-    fn identify_risk_factors(&self, components: &HealthComponents, metrics: &crate::analytics::monitoring::ClusterMetrics) -> Vec<String> {
+    fn identify_risk_factors(
+        &self,
+        components: &HealthComponents,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> Vec<String> {
         let mut risks: Vec<String> = Vec::new();
 
         if components.system_performance < 60.0 {
@@ -478,18 +536,36 @@ impl HealthScorer {
         risks
     }
 
-    async fn generate_recommendations(&self, health_score: &HealthScore, metrics: &crate::analytics::monitoring::ClusterMetrics) -> Result<()> {
+    async fn generate_recommendations(
+        &self,
+        health_score: &HealthScore,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> Result<()> {
         let mut recommendations = Vec::new();
 
         // Generate recommendations based on health components
-        self.generate_performance_recommendations(&mut recommendations, &health_score.component_scores, metrics);
-        self.generate_security_recommendations(&mut recommendations, &health_score.component_scores, metrics);
-        self.generate_scalability_recommendations(&mut recommendations, &health_score.component_scores, metrics);
+        self.generate_performance_recommendations(
+            &mut recommendations,
+            &health_score.component_scores,
+            metrics,
+        );
+        self.generate_security_recommendations(
+            &mut recommendations,
+            &health_score.component_scores,
+            metrics,
+        );
+        self.generate_scalability_recommendations(
+            &mut recommendations,
+            &health_score.component_scores,
+            metrics,
+        );
         self.generate_maintenance_recommendations(&mut recommendations, health_score);
 
         // Sort by impact and priority
         recommendations.sort_by(|a, b| {
-            (b.impact_score * b.confidence).partial_cmp(&(a.impact_score * a.confidence)).unwrap()
+            (b.impact_score * b.confidence)
+                .partial_cmp(&(a.impact_score * a.confidence))
+                .unwrap()
         });
 
         // Keep top recommendations
@@ -717,7 +793,10 @@ mod tests {
         let scorer = HealthScorer::new(config);
 
         assert!(scorer.config.enable_health_scoring);
-        assert_eq!(scorer.config.scoring_weights.system_performance_weight, 0.25);
+        assert_eq!(
+            scorer.config.scoring_weights.system_performance_weight,
+            0.25
+        );
     }
 
     #[tokio::test]
@@ -759,7 +838,14 @@ mod tests {
         let health_score = scorer.get_current_health_score().await.unwrap();
 
         assert!(health_score.overall_score > 0.0 && health_score.overall_score <= 100.0);
-        assert!(matches!(health_score.grade, HealthGrade::Excellent | HealthGrade::Good | HealthGrade::Fair | HealthGrade::Poor | HealthGrade::Critical));
+        assert!(matches!(
+            health_score.grade,
+            HealthGrade::Excellent
+                | HealthGrade::Good
+                | HealthGrade::Fair
+                | HealthGrade::Poor
+                | HealthGrade::Critical
+        ));
     }
 
     #[tokio::test]

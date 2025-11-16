@@ -24,7 +24,13 @@ impl RiskAssessor {
         Self
     }
 
-    pub async fn assess_overall_risk(&self, _frameworks: &std::collections::HashMap<super::frameworks::ComplianceFramework, super::FrameworkCheckResult>) -> Result<super::RiskAssessment> {
+    pub async fn assess_overall_risk(
+        &self,
+        _frameworks: &std::collections::HashMap<
+            super::frameworks::ComplianceFramework,
+            super::FrameworkCheckResult,
+        >,
+    ) -> Result<super::RiskAssessment> {
         Ok(super::RiskAssessment {
             overall_risk_level: RiskLevel::Low,
             risk_score: 0.2,
@@ -33,7 +39,10 @@ impl RiskAssessor {
         })
     }
 
-    pub async fn assess_operation_risk(&self, _operation: &super::ComplianceOperation) -> Result<Vec<ComplianceRisk>> {
+    pub async fn assess_operation_risk(
+        &self,
+        _operation: &super::ComplianceOperation,
+    ) -> Result<Vec<ComplianceRisk>> {
         Ok(vec![])
     }
 }

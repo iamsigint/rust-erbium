@@ -1,6 +1,8 @@
-use crate::utils::error::BlockchainError;
 use crate::bridges::core::bridge_manager::BridgeManager;
-use crate::core::chain::Blockchain;
+use crate::core::chain::{Blockchain, PersistentBlockchain};
+use crate::core::types::{Address, Hash};
+use crate::core::{Block, Transaction};
+use crate::utils::error::BlockchainError;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -37,43 +39,55 @@ fn parse_and_process_transaction(body: serde_json::Value) -> Result<String, Bloc
         .map_err(|e| BlockchainError::Serialization(format!("Invalid JSON: {}", e)))?;
 
     // Parse addresses
-    let from = crate::core::types::Address::new(req.from)
+    let from = Address::new(req.from)
         .map_err(|_| BlockchainError::InvalidTransaction("Invalid from address".to_string()))?;
-    let to = crate::core::types::Address::new(req.to)
+    let to = Address::new(req.to)
         .map_err(|_| BlockchainError::InvalidTransaction("Invalid to address".to_string()))?;
 
     // Create transaction based on type
     let transaction = match req.transaction_type.as_str() {
-        "transfer" => {
-            crate::core::transaction::Transaction::new_transfer(
-                from,
-                to,
-                req.amount.unwrap_or(0),
-                req.fee,
-                req.nonce,
-            )
-        }
+        "transfer" => crate::core::transaction::Transaction::new_transfer(
+            from,
+            to,
+            req.amount.unwrap_or(0),
+            req.fee,
+            req.nonce,
+        ),
         "confidential_transfer" => {
             // Parse confidential transaction data
             let zk_proof = hex::decode(req.zk_proof.unwrap_or_default())
                 .map_err(|_| BlockchainError::InvalidTransaction("Invalid ZK proof".to_string()))?;
-            let input_commitments = req.input_commitments.unwrap_or_default()
+            let input_commitments = req
+                .input_commitments
+                .unwrap_or_default()
                 .iter()
                 .map(hex::decode)
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| BlockchainError::InvalidTransaction("Invalid input commitments".to_string()))?;
-            let output_commitments = req.output_commitments.unwrap_or_default()
+                .map_err(|_| {
+                    BlockchainError::InvalidTransaction("Invalid input commitments".to_string())
+                })?;
+            let output_commitments = req
+                .output_commitments
+                .unwrap_or_default()
                 .iter()
                 .map(hex::decode)
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| BlockchainError::InvalidTransaction("Invalid output commitments".to_string()))?;
-            let range_proofs = req.range_proofs.unwrap_or_default()
+                .map_err(|_| {
+                    BlockchainError::InvalidTransaction("Invalid output commitments".to_string())
+                })?;
+            let range_proofs = req
+                .range_proofs
+                .unwrap_or_default()
                 .iter()
                 .map(hex::decode)
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| BlockchainError::InvalidTransaction("Invalid range proofs".to_string()))?;
+                .map_err(|_| {
+                    BlockchainError::InvalidTransaction("Invalid range proofs".to_string())
+                })?;
             let binding_signature = hex::decode(req.binding_signature.unwrap_or_default())
-                .map_err(|_| BlockchainError::InvalidTransaction("Invalid binding signature".to_string()))?;
+                .map_err(|_| {
+                    BlockchainError::InvalidTransaction("Invalid binding signature".to_string())
+                })?;
 
             crate::core::transaction::Transaction::new_confidential_transfer(
                 from,
@@ -88,26 +102,23 @@ fn parse_and_process_transaction(body: serde_json::Value) -> Result<String, Bloc
                 binding_signature,
             )
         }
-        "stake" => {
-            crate::core::transaction::Transaction::new_stake(
-                from,
-                req.amount.unwrap_or(0),
-                req.fee,
-                req.nonce,
-            )
-        }
-        "unstake" => {
-            crate::core::transaction::Transaction::new_unstake(
-                from,
-                req.amount.unwrap_or(0),
-                req.fee,
-                req.nonce,
-            )
-        }
+        "stake" => crate::core::transaction::Transaction::new_stake(
+            from,
+            req.amount.unwrap_or(0),
+            req.fee,
+            req.nonce,
+        ),
+        "unstake" => crate::core::transaction::Transaction::new_unstake(
+            from,
+            req.amount.unwrap_or(0),
+            req.fee,
+            req.nonce,
+        ),
         _ => {
-            return Err(BlockchainError::InvalidTransaction(
-                format!("Unknown transaction type: {}", req.transaction_type)
-            ));
+            return Err(BlockchainError::InvalidTransaction(format!(
+                "Unknown transaction type: {}",
+                req.transaction_type
+            )));
         }
     };
 
@@ -115,7 +126,7 @@ fn parse_and_process_transaction(body: serde_json::Value) -> Result<String, Bloc
     transaction.validate_basic()?;
 
     // Generate transaction hash
-    let tx_hash = transaction.hash().to_hex();
+    let tx_hash = transaction.hash().to_string();
 
     // TODO: Add transaction to mempool for processing
     // For now, just return the hash
@@ -127,7 +138,7 @@ fn parse_and_process_transaction(body: serde_json::Value) -> Result<String, Bloc
 #[derive(Clone)]
 pub struct RestServer {
     port: u16,
-    persistent_blockchain: Option<Arc<RwLock<crate::core::chain::PersistentBlockchain>>>,
+    persistent_blockchain: Option<Arc<RwLock<PersistentBlockchain>>>,
     blockchain: Option<Arc<RwLock<Blockchain>>>,
     bridge_manager: Option<Arc<RwLock<BridgeManager>>>,
     p2p_network: Option<Arc<RwLock<crate::network::p2p_network::P2PNetwork>>>,
@@ -151,7 +162,10 @@ impl RestServer {
         })
     }
 
-    pub fn with_persistent_blockchain(mut self, blockchain: Arc<RwLock<crate::core::chain::PersistentBlockchain>>) -> Self {
+    pub fn with_persistent_blockchain(
+        mut self,
+        blockchain: Arc<RwLock<PersistentBlockchain>>,
+    ) -> Self {
         self.persistent_blockchain = Some(blockchain);
         self
     }
@@ -166,30 +180,30 @@ impl RestServer {
         self
     }
 
-    pub fn with_p2p_network(mut self, p2p_network: Arc<RwLock<crate::network::p2p_network::P2PNetwork>>) -> Self {
+    pub fn with_p2p_network(
+        mut self,
+        p2p_network: Arc<RwLock<crate::network::p2p_network::P2PNetwork>>,
+    ) -> Self {
         self.p2p_network = Some(p2p_network);
         self
     }
-    
+
     pub async fn start(&self) -> Result<(), BlockchainError> {
         let routes = self.create_routes();
-        
+
         log::info!("Starting REST API server on port {}", self.port);
-        warp::serve(routes)
-            .run(([0, 0, 0, 0], self.port))
-            .await;
-        
+        warp::serve(routes).run(([0, 0, 0, 0], self.port)).await;
+
         Ok(())
     }
-    
+
     pub async fn stop(&self) -> Result<(), BlockchainError> {
         log::info!("REST API server stopped");
         Ok(())
     }
-    
+
     fn create_routes(&self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
         use warp::Filter;
-
 
         // Clone self for use in closures
         let self_clone1 = self.clone();
@@ -202,9 +216,7 @@ impl RestServer {
             .and(warp::get())
             .and_then(move || {
                 let server = self_clone1.clone();
-                async move {
-                    server.get_node_info().await
-                }
+                async move { server.get_node_info().await }
             });
 
         let chain_info = warp::path("api")
@@ -214,9 +226,7 @@ impl RestServer {
             .and(warp::get())
             .and_then(move || {
                 let server = self_clone2.clone();
-                async move {
-                    server.get_chain_info().await
-                }
+                async move { server.get_chain_info().await }
             });
 
         // Create additional clones for other routes
@@ -231,9 +241,7 @@ impl RestServer {
             .and(warp::get())
             .and_then(move || {
                 let server = self_clone3.clone();
-                async move {
-                    server.get_blocks().await
-                }
+                async move { server.get_blocks().await }
             });
 
         let block_by_hash = warp::path("api")
@@ -244,9 +252,7 @@ impl RestServer {
             .and(warp::get())
             .and_then(move |hash| {
                 let server = self_clone4.clone();
-                async move {
-                    server.get_block_by_hash(hash).await
-                }
+                async move { server.get_block_by_hash(hash).await }
             });
 
         let transactions = warp::path("api")
@@ -256,9 +262,7 @@ impl RestServer {
             .and(warp::get())
             .and_then(move || {
                 let server = self_clone5.clone();
-                async move {
-                    server.get_transactions().await
-                }
+                async move { server.get_transactions().await }
             });
 
         // Create clones for remaining routes
@@ -274,9 +278,7 @@ impl RestServer {
             .and(warp::get())
             .and_then(move |hash| {
                 let server = self_clone6.clone();
-                async move {
-                    server.get_transaction_by_hash(hash).await
-                }
+                async move { server.get_transaction_by_hash(hash).await }
             });
 
         let send_transaction = warp::path("api")
@@ -287,9 +289,7 @@ impl RestServer {
             .and(warp::body::json())
             .and_then(move |body| {
                 let server = self_clone7.clone();
-                async move {
-                    server.send_transaction(body).await
-                }
+                async move { server.send_transaction(body).await }
             });
 
         let validators = warp::path("api")
@@ -299,9 +299,7 @@ impl RestServer {
             .and(warp::get())
             .and_then(move || {
                 let server = self_clone8.clone();
-                async move {
-                    server.get_validators().await
-                }
+                async move { server.get_validators().await }
             });
 
         let health = warp::path("api")
@@ -309,9 +307,7 @@ impl RestServer {
             .and(warp::path("health"))
             .and(warp::path::end())
             .and(warp::get())
-            .and_then(|| async {
-                RestServer::health_check_static().await
-            });
+            .and_then(|| async { RestServer::health_check_static().await });
 
         // Group core endpoints
         let core_routes = node_info
@@ -502,9 +498,7 @@ impl RestServer {
             .and(warp::get())
             .and_then(Self::get_account_transactions);
 
-        let account_routes = account_info
-            .or(account_transactions)
-            .boxed();
+        let account_routes = account_info.or(account_transactions).boxed();
 
         // Analytics endpoints
         let analytics_tps = warp::path("api")
@@ -563,42 +557,47 @@ impl RestServer {
     }
 
     async fn get_node_info(&self) -> Result<impl warp::Reply, Infallible> {
-        // Use real version from Cargo.toml instead of hardcoded
         let version = env!("CARGO_PKG_VERSION");
 
-        // Get real block height if blockchain is connected
-        let block_height = if let Some(blockchain) = &self.persistent_blockchain {
-            // Get latest height from storage
-            match blockchain.read().await.get_latest_height().await {
-                Ok(height) => height as i32,
-                Err(_) => 0,
+        let mut block_height: u64 = 0;
+        let mut latest_block_time: Option<u64> = None;
+
+        if let Some(blockchain) = &self.persistent_blockchain {
+            let chain = blockchain.read().await;
+            match chain.get_latest_height().await {
+                Ok(height) => {
+                    block_height = height;
+                    if let Ok(Some(block)) = chain.get_block_by_height(height).await {
+                        latest_block_time = Some(block.header.timestamp);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to obtain latest block height: {}", e);
+                }
+            }
+        }
+
+        let peers = if let Some(p2p) = &self.p2p_network {
+            match p2p.read().await.get_stats().await {
+                Ok(stats) => stats.connected_peers,
+                Err(e) => {
+                    log::warn!("Failed to obtain peer statistics: {}", e);
+                    0
+                }
             }
         } else {
             0
         };
 
-        // Get real peer count if P2P network is connected
-        let peers = if let Some(_p2p) = &self.p2p_network {
-            // TODO: Query actual P2P network for peer count
-            // For now, return current count (will be 0)
-            0
-        } else {
-            0
-        };
-
-        // Get sync status - stopped if no P2P network
-        let sync_status = if self.p2p_network.is_some() {
-            "syncing" // Could be more detailed (syncing, synced, stopped)
-        } else {
-            "stopped"
-        };
+        let sync_status = if peers > 0 { "syncing" } else { "offline" };
 
         let response = RestResponse {
             success: true,
             data: Some(serde_json::json!({
                 "version": format!("erbium/{}", version),
                 "network": "mainnet",
-                "blockHeight": block_height, // Real calculated height
+                "blockHeight": block_height,
+                "latestBlockTime": latest_block_time,
                 "syncStatus": sync_status,
                 "peers": peers
             })),
@@ -609,19 +608,36 @@ impl RestServer {
 
     async fn get_chain_info(&self) -> Result<impl warp::Reply, Infallible> {
         let version = env!("CARGO_PKG_VERSION");
+        let mut height: u64 = 0;
+        let mut total_transactions: u64 = 0;
+        let mut genesis_timestamp: Option<u64> = None;
+        let mut latest_block_timestamp: Option<u64> = None;
+        let mut circulating_supply = "0".to_string();
 
-        // Get real chain data from blockchain state
-        let height = 0u64;
-        let total_transactions = 0u64;
-        // Get genesis timestamp from first block if available
-        let genesis_timestamp = if let Some(blockchain) = &self.persistent_blockchain {
-            match blockchain.read().await.get_block_by_height(0).await {
-                Ok(Some(genesis_block)) => Some(genesis_block.header.timestamp),
-                _ => None,
+        if let Some(blockchain) = &self.persistent_blockchain {
+            let chain = blockchain.read().await;
+
+            circulating_supply = chain.get_state().get_total_supply().to_string();
+
+            match chain.get_latest_height().await {
+                Ok(latest_height) => height = latest_height,
+                Err(e) => {
+                    log::warn!("Failed to determine latest height: {}", e);
+                }
             }
-        } else {
-            None
-        };
+
+            let blocks = &chain.blockchain().blocks;
+            if let Some(genesis_block) = blocks.first() {
+                genesis_timestamp = Some(genesis_block.header.timestamp);
+            }
+            if let Some(latest_block) = blocks.last() {
+                latest_block_timestamp = Some(latest_block.header.timestamp);
+            }
+            total_transactions = blocks
+                .iter()
+                .map(|block| block.transactions.len() as u64)
+                .sum();
+        }
 
         let response = RestResponse {
             success: true,
@@ -632,9 +648,10 @@ impl RestServer {
                 "timestamp": chrono::Utc::now().timestamp_millis(),
                 "chain_id": 137,
                 "genesis_timestamp": genesis_timestamp,
+                "latest_block_timestamp": latest_block_timestamp,
                 "total_transactions": total_transactions,
                 "active_validators": 0,
-                "circulating_supply": "0"
+                "circulating_supply": circulating_supply
             })),
             error: None,
         };
@@ -642,32 +659,34 @@ impl RestServer {
     }
 
     async fn get_blocks(&self) -> Result<impl warp::Reply, Infallible> {
-        // TODO: Will query real blockchain for available blocks
-        // For now, return empty array - no blocks available
+        const MAX_BLOCKS: usize = 100;
+
+        let mut blocks_json = Vec::new();
+
+        if let Some(blockchain) = &self.persistent_blockchain {
+            let chain = blockchain.read().await;
+            let blocks = &chain.blockchain().blocks;
+
+            for block in blocks.iter().rev().take(MAX_BLOCKS) {
+                blocks_json.push(Self::format_block_summary(block));
+            }
+        }
+
         let response = RestResponse {
             success: true,
-            data: Some(serde_json::Value::Array(vec![])),
+            data: Some(serde_json::Value::Array(blocks_json)),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
 
     async fn get_block_by_hash(&self, hash: String) -> Result<impl warp::Reply, Infallible> {
-        // Try to get block from blockchain storage
         if let Some(blockchain) = &self.persistent_blockchain {
-            match crate::core::types::Hash::from_hex(&hash) {
+            match Hash::from_hex(&hash) {
                 Ok(block_hash) => {
                     match blockchain.read().await.get_block_by_hash(&block_hash).await {
                         Ok(Some(block)) => {
-                            // Convert block to JSON response
-                            let block_response = serde_json::json!({
-                                "hash": block.hash().to_string(),
-                                "height": block.header.number,
-                                "timestamp": block.header.timestamp,
-                                "transactions": block.transactions.len(),
-                                "validator": block.header.validator,
-                                "parentHash": block.header.previous_hash.to_string()
-                            });
+                            let block_response = Self::format_block_detailed(&block);
 
                             let response = RestResponse {
                                 success: true,
@@ -676,22 +695,23 @@ impl RestServer {
                             };
                             return Ok(warp::reply::json(&response));
                         }
-                        _ => {}
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::warn!("Failed to load block {}: {}", hash, e);
+                        }
                     }
                 }
                 Err(_) => {
-                    // Invalid hash format
                     let response = RestResponse::<serde_json::Value> {
                         success: false,
                         data: None,
-                        error: Some("Invalid block hash format".to_string()),
+                        error: Some("Invalid block hash".to_string()),
                     };
                     return Ok(warp::reply::json(&response));
                 }
             }
         }
 
-        // Block not found
         let response = RestResponse::<serde_json::Value> {
             success: false,
             data: None,
@@ -700,21 +720,104 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
+    fn format_block_summary(block: &Block) -> serde_json::Value {
+        let block_hash = block.hash().to_string();
+        serde_json::json!({
+            "hash": block_hash,
+            "height": block.header.number,
+            "timestamp": block.header.timestamp,
+            "transactionCount": block.transactions.len(),
+            "validator": block.header.validator,
+            "difficulty": block.header.difficulty,
+            "previousHash": block.header.previous_hash.to_string(),
+            "merkleRoot": block.header.merkle_root.to_string()
+        })
+    }
+
+    fn format_block_detailed(block: &Block) -> serde_json::Value {
+        let transactions: Vec<_> = block
+            .transactions
+            .iter()
+            .enumerate()
+            .map(|(index, tx)| {
+                Self::format_transaction(tx, Some(block), Some(block.header.number), Some(index))
+            })
+            .collect();
+
+        let block_hash = block.hash().to_string();
+
+        serde_json::json!({
+            "hash": block_hash,
+            "height": block.header.number,
+            "timestamp": block.header.timestamp,
+            "validator": block.header.validator,
+            "difficulty": block.header.difficulty,
+            "previousHash": block.header.previous_hash.to_string(),
+            "merkleRoot": block.header.merkle_root.to_string(),
+            "transactionCount": block.transactions.len(),
+            "transactions": transactions
+        })
+    }
+
+    fn format_transaction(
+        tx: &Transaction,
+        block: Option<&Block>,
+        block_height: Option<u64>,
+        tx_index: Option<usize>,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "hash": tx.hash().to_string(),
+            "type": format!("{:?}", tx.transaction_type),
+            "from": tx.from.to_string(),
+            "to": tx.to.to_string(),
+            "amount": tx.amount,
+            "fee": tx.fee,
+            "nonce": tx.nonce,
+            "timestamp": tx.timestamp,
+            "blockHash": block.map(|b| b.hash().to_string()),
+            "blockHeight": block_height,
+            "index": tx_index,
+            "status": "confirmed"
+        })
+    }
+
     async fn get_transactions(&self) -> Result<impl warp::Reply, Infallible> {
-        // No transactions stored persistently yet - return empty array
+        const MAX_TRANSACTIONS: usize = 100;
+
+        let mut transactions_json = Vec::new();
+
+        if let Some(blockchain) = &self.persistent_blockchain {
+            let chain = blockchain.read().await;
+            let blocks = &chain.blockchain().blocks;
+
+            'outer: for block in blocks.iter().rev() {
+                for (index, tx) in block.transactions.iter().enumerate().rev() {
+                    transactions_json.push(Self::format_transaction(
+                        tx,
+                        Some(block),
+                        Some(block.header.number),
+                        Some(index),
+                    ));
+
+                    if transactions_json.len() >= MAX_TRANSACTIONS {
+                        break 'outer;
+                    }
+                }
+            }
+        }
+
         let response = RestResponse {
             success: true,
-            data: Some(serde_json::Value::Array(vec![])),
+            data: Some(serde_json::Value::Array(transactions_json)),
             error: None,
         };
         Ok(warp::reply::json(&response))
     }
 
     async fn get_transaction_by_hash(&self, hash: String) -> Result<impl warp::Reply, Infallible> {
-        // Try to get transaction from blockchain storage
         if let Some(blockchain) = &self.persistent_blockchain {
-            let tx_hash_bytes = match hex::decode(&hash) {
-                Ok(bytes) => bytes,
+            let tx_hash = match Hash::from_hex(&hash) {
+                Ok(parsed) => parsed,
                 Err(_) => {
                     let response = RestResponse::<serde_json::Value> {
                         success: false,
@@ -725,21 +828,18 @@ impl RestServer {
                 }
             };
 
-            match blockchain.read().await.get_transaction_by_hash(&tx_hash_bytes).await {
-                Ok(Some(transaction)) => {
-                    // Convert transaction to JSON response
-                    let transaction_response = serde_json::json!({
-                        "hash": transaction.hash().to_string(),
-                        "from": transaction.from.to_string(),
-                        "to": transaction.to.to_string(),
-                        "amount": transaction.amount,
-                        "fee": transaction.fee,
-                        "nonce": transaction.nonce,
-                        "timestamp": transaction.timestamp,
-                        "blockHash": "0x000...block", // TODO: Get actual block hash
-                        "blockHeight": 0, // TODO: Get actual block height
-                        "status": "confirmed"
-                    });
+            let chain = blockchain.read().await;
+
+            if let Some((transaction, block_index, tx_index)) =
+                chain.blockchain().get_transaction_by_hash(&tx_hash)
+            {
+                if let Some(block) = chain.blockchain().get_block_by_height(block_index) {
+                    let transaction_response = Self::format_transaction(
+                        transaction,
+                        Some(block),
+                        Some(block.header.number),
+                        Some(tx_index),
+                    );
 
                     let response = RestResponse {
                         success: true,
@@ -748,11 +848,27 @@ impl RestServer {
                     };
                     return Ok(warp::reply::json(&response));
                 }
-                _ => {}
+            }
+
+            match chain.get_transaction_by_hash(tx_hash.as_bytes()).await {
+                Ok(Some(transaction)) => {
+                    let transaction_response =
+                        Self::format_transaction(&transaction, None, None, None);
+
+                    let response = RestResponse {
+                        success: true,
+                        data: Some(transaction_response),
+                        error: None,
+                    };
+                    return Ok(warp::reply::json(&response));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::warn!("Failed to load transaction {}: {}", hash, e);
+                }
             }
         }
 
-        // Transaction not found
         let response = RestResponse::<serde_json::Value> {
             success: false,
             data: None,
@@ -761,13 +877,14 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn send_transaction(&self, body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+    async fn send_transaction(
+        &self,
+        body: serde_json::Value,
+    ) -> Result<impl warp::Reply, Infallible> {
         log::info!("Received transaction via REST: {:?}", body);
 
         // Parse transaction from JSON
-        let result = tokio::task::spawn_blocking(move || {
-            parse_and_process_transaction(body)
-        }).await;
+        let result = tokio::task::spawn_blocking(move || parse_and_process_transaction(body)).await;
 
         match result {
             Ok(Ok(tx_hash)) => {
@@ -854,7 +971,9 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_bridge_transfer_by_id(_transfer_id: String) -> Result<impl warp::Reply, Infallible> {
+    async fn get_bridge_transfer_by_id(
+        _transfer_id: String,
+    ) -> Result<impl warp::Reply, Infallible> {
         // Bridge transfer doesn't exist - return not found
         let response = RestResponse::<serde_json::Value> {
             success: false,
@@ -864,7 +983,9 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn initiate_bridge_transfer(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+    async fn initiate_bridge_transfer(
+        _body: serde_json::Value,
+    ) -> Result<impl warp::Reply, Infallible> {
         // Bridges not implemented - return error
         let response: RestResponse<String> = RestResponse {
             success: false,
@@ -885,7 +1006,9 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_governance_proposal_by_id(_proposal_id: String) -> Result<impl warp::Reply, Infallible> {
+    async fn get_governance_proposal_by_id(
+        _proposal_id: String,
+    ) -> Result<impl warp::Reply, Infallible> {
         // Governance not implemented - return not found
         let response = RestResponse::<serde_json::Value> {
             success: false,
@@ -895,7 +1018,9 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn create_governance_proposal(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+    async fn create_governance_proposal(
+        _body: serde_json::Value,
+    ) -> Result<impl warp::Reply, Infallible> {
         // Governance not implemented - return error
         let response: RestResponse<String> = RestResponse {
             success: false,
@@ -905,7 +1030,10 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn vote_governance_proposal(_proposal_id: String, _body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+    async fn vote_governance_proposal(
+        _proposal_id: String,
+        _body: serde_json::Value,
+    ) -> Result<impl warp::Reply, Infallible> {
         // Governance not implemented - return error
         let response: RestResponse<String> = RestResponse {
             success: false,
@@ -936,7 +1064,9 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_staking_validator_by_addr(_validator_addr: String) -> Result<impl warp::Reply, Infallible> {
+    async fn get_staking_validator_by_addr(
+        _validator_addr: String,
+    ) -> Result<impl warp::Reply, Infallible> {
         // Staking not implemented - return not found
         let response = RestResponse::<serde_json::Value> {
             success: false,
@@ -976,7 +1106,9 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn staking_claim_rewards(_body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+    async fn staking_claim_rewards(
+        _body: serde_json::Value,
+    ) -> Result<impl warp::Reply, Infallible> {
         // Staking not implemented - return error
         let response: RestResponse<String> = RestResponse {
             success: false,
@@ -1017,7 +1149,10 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn call_contract(_contract_addr: String, _body: serde_json::Value) -> Result<impl warp::Reply, Infallible> {
+    async fn call_contract(
+        _contract_addr: String,
+        _body: serde_json::Value,
+    ) -> Result<impl warp::Reply, Infallible> {
         // Smart contracts not implemented yet - return error
         let response: RestResponse<String> = RestResponse {
             success: false,
@@ -1060,7 +1195,9 @@ impl RestServer {
         Ok(warp::reply::json(&response))
     }
 
-    async fn get_account_transactions(_account_addr: String) -> Result<impl warp::Reply, Infallible> {
+    async fn get_account_transactions(
+        _account_addr: String,
+    ) -> Result<impl warp::Reply, Infallible> {
         // No transactions have been made yet - return empty array
         let response = RestResponse {
             success: true,

@@ -4,8 +4,8 @@
 //! time series forecasting, trend analysis, and predictive modeling for
 //! blockchain performance metrics.
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -55,7 +55,7 @@ pub struct TrendAnalysis {
     pub metric_name: String,
     pub trend_direction: TrendDirection,
     pub trend_strength: f64, // 0-1, higher is stronger trend
-    pub slope: f64, // Rate of change
+    pub slope: f64,          // Rate of change
     pub seasonality_detected: bool,
     pub seasonal_period_hours: Option<usize>,
     pub volatility: f64,
@@ -110,7 +110,9 @@ impl PredictiveAnalytics {
     pub async fn start(&self) -> Result<()> {
         let mut is_running = self.is_running.write().await;
         if *is_running {
-            return Err(BlockchainError::Analytics("Predictive analytics already running".to_string()));
+            return Err(BlockchainError::Analytics(
+                "Predictive analytics already running".to_string(),
+            ));
         }
 
         *is_running = true;
@@ -120,7 +122,10 @@ impl PredictiveAnalytics {
     }
 
     /// Update model with new metrics data
-    pub async fn update_model(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> Result<()> {
+    pub async fn update_model(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> Result<()> {
         if !self.config.enable_predictions {
             return Ok(());
         }
@@ -131,13 +136,17 @@ impl PredictiveAnalytics {
             ("memory_usage_percent", metrics.memory_usage_percent),
             ("network_bandwidth_mbps", metrics.network_bandwidth_mbps),
             ("transactions_per_second", metrics.transactions_per_second),
-            ("average_network_latency_ms", metrics.average_network_latency_ms),
+            (
+                "average_network_latency_ms",
+                metrics.average_network_latency_ms,
+            ),
             ("error_rate", metrics.error_rate),
             ("consensus_delay_ms", metrics.consensus_delay_ms),
         ];
 
         for (metric_name, value) in metrics_to_predict {
-            self.add_data_point(metric_name, metrics.timestamp, value).await?;
+            self.add_data_point(metric_name, metrics.timestamp, value)
+                .await?;
             self.update_trend_analysis(metric_name).await?;
         }
 
@@ -184,7 +193,10 @@ impl PredictiveAnalytics {
     }
 
     /// Predict future resource requirements
-    pub async fn predict_resource_requirements(&self, hours_ahead: usize) -> Result<ResourcePrediction> {
+    pub async fn predict_resource_requirements(
+        &self,
+        hours_ahead: usize,
+    ) -> Result<ResourcePrediction> {
         let predictions = self.get_predictions(hours_ahead).await?;
 
         let mut cpu_prediction = 0.0;
@@ -203,7 +215,8 @@ impl PredictiveAnalytics {
         }
 
         // Calculate scaling recommendations
-        let _current_cpu = predictions.iter()
+        let _current_cpu = predictions
+            .iter()
             .find(|p| p.metric_name == "cpu_usage_percent")
             .map(|p| p.predicted_value)
             .unwrap_or(50.0);
@@ -238,9 +251,12 @@ impl PredictiveAnalytics {
     async fn add_data_point(&self, metric_name: &str, timestamp: u64, value: f64) -> Result<()> {
         let mut historical_data = self.historical_data.write().await;
 
-        let data_queue = historical_data.entry(metric_name.to_string()).or_insert_with(|| {
-            VecDeque::with_capacity(self.config.historical_window_days * 24) // Hourly data points
-        });
+        let data_queue = historical_data
+            .entry(metric_name.to_string())
+            .or_insert_with(|| {
+                VecDeque::with_capacity(self.config.historical_window_days * 24)
+                // Hourly data points
+            });
 
         data_queue.push_back((timestamp, value));
 
@@ -253,18 +269,26 @@ impl PredictiveAnalytics {
         Ok(())
     }
 
-    async fn predict_metric(&self, metric_name: &str, hours_ahead: usize) -> Result<PredictionResult> {
+    async fn predict_metric(
+        &self,
+        metric_name: &str,
+        hours_ahead: usize,
+    ) -> Result<PredictionResult> {
         let models = self.models.read().await;
         let historical_data = self.historical_data.read().await;
 
-        let model = models.get(metric_name)
-            .ok_or_else(|| BlockchainError::Analytics(format!("No model available for {}", metric_name)))?;
+        let model = models.get(metric_name).ok_or_else(|| {
+            BlockchainError::Analytics(format!("No model available for {}", metric_name))
+        })?;
 
-        let data = historical_data.get(metric_name)
-            .ok_or_else(|| BlockchainError::Analytics(format!("No historical data for {}", metric_name)))?;
+        let data = historical_data.get(metric_name).ok_or_else(|| {
+            BlockchainError::Analytics(format!("No historical data for {}", metric_name))
+        })?;
 
         if data.len() < 10 {
-            return Err(BlockchainError::Analytics("Insufficient historical data for prediction".to_string()));
+            return Err(BlockchainError::Analytics(
+                "Insufficient historical data for prediction".to_string(),
+            ));
         }
 
         // Use multiple forecasting methods and ensemble them
@@ -275,15 +299,18 @@ impl PredictiveAnalytics {
         // Ensemble prediction (weighted average)
         let weights = [0.4, 0.3, 0.3]; // ARIMA gets highest weight
         let predictions = [arima_prediction, exponential_smoothing, linear_regression];
-        let ensemble_prediction = predictions.iter()
+        let ensemble_prediction = predictions
+            .iter()
             .zip(weights.iter())
             .map(|(pred, weight)| pred * weight)
             .sum::<f64>();
 
         // Calculate confidence interval
-        let variance = predictions.iter()
+        let variance = predictions
+            .iter()
             .map(|pred| (pred - ensemble_prediction).powi(2))
-            .sum::<f64>() / predictions.len() as f64;
+            .sum::<f64>()
+            / predictions.len() as f64;
         let std_dev = variance.sqrt();
         let confidence_margin = 1.96 * std_dev; // 95% confidence interval
 
@@ -320,7 +347,7 @@ impl PredictiveAnalytics {
 
         let data = match historical_data.get(metric_name) {
             Some(data) if data.len() >= 24 => data, // Need at least 24 hours of data
-            _ => return Ok(()), // Not enough data for trend analysis
+            _ => return Ok(()),                     // Not enough data for trend analysis
         };
 
         // Calculate linear trend
@@ -375,7 +402,11 @@ impl PredictiveAnalytics {
         let values: Vec<f64> = data.iter().map(|(_, v)| *v).collect();
         let mean = values.iter().sum::<f64>() / values.len() as f64;
         let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
-        let volatility = if mean != 0.0 { (variance.sqrt() / mean).abs() } else { 0.0 };
+        let volatility = if mean != 0.0 {
+            (variance.sqrt() / mean).abs()
+        } else {
+            0.0
+        };
 
         // Detect seasonality (simplified)
         let seasonality_detected = self.detect_seasonality(&values);
@@ -384,10 +415,14 @@ impl PredictiveAnalytics {
         // Get prediction accuracy from model
         let prediction_accuracy = {
             let models = self.models.read().await;
-            models.get(metric_name)
+            models
+                .get(metric_name)
                 .and_then(|model| {
                     if !model.accuracy_history.is_empty() {
-                        Some(model.accuracy_history.iter().sum::<f64>() / model.accuracy_history.len() as f64)
+                        Some(
+                            model.accuracy_history.iter().sum::<f64>()
+                                / model.accuracy_history.len() as f64,
+                        )
                     } else {
                         None
                     }
@@ -417,7 +452,8 @@ impl PredictiveAnalytics {
         let mut models = self.models.write().await;
 
         for (metric_name, data) in historical_data.iter() {
-            if data.len() < 50 { // Need minimum data for training
+            if data.len() < 50 {
+                // Need minimum data for training
                 continue;
             }
 
@@ -452,7 +488,9 @@ impl PredictiveAnalytics {
     // Forecasting methods
     fn arima_predict(&self, data: &VecDeque<(u64, f64)>, _hours_ahead: usize) -> Result<f64> {
         if data.len() < 5 {
-            return Err(BlockchainError::Analytics("Insufficient data for ARIMA prediction".to_string()));
+            return Err(BlockchainError::Analytics(
+                "Insufficient data for ARIMA prediction".to_string(),
+            ));
         }
 
         // Simplified ARIMA(1,0,1) prediction
@@ -477,9 +515,15 @@ impl PredictiveAnalytics {
         Ok(prediction.max(0.0))
     }
 
-    fn exponential_smoothing_predict(&self, data: &VecDeque<(u64, f64)>, _hours_ahead: usize) -> Result<f64> {
+    fn exponential_smoothing_predict(
+        &self,
+        data: &VecDeque<(u64, f64)>,
+        _hours_ahead: usize,
+    ) -> Result<f64> {
         if data.is_empty() {
-            return Err(BlockchainError::Analytics("No data for exponential smoothing".to_string()));
+            return Err(BlockchainError::Analytics(
+                "No data for exponential smoothing".to_string(),
+            ));
         }
 
         let values: Vec<f64> = data.iter().map(|(_, v)| *v).collect();
@@ -493,9 +537,15 @@ impl PredictiveAnalytics {
         Ok(smoothed.max(0.0))
     }
 
-    fn linear_regression_predict(&self, data: &VecDeque<(u64, f64)>, hours_ahead: usize) -> Result<f64> {
+    fn linear_regression_predict(
+        &self,
+        data: &VecDeque<(u64, f64)>,
+        hours_ahead: usize,
+    ) -> Result<f64> {
         if data.len() < 2 {
-            return Err(BlockchainError::Analytics("Insufficient data for linear regression".to_string()));
+            return Err(BlockchainError::Analytics(
+                "Insufficient data for linear regression".to_string(),
+            ));
         }
 
         let n = data.len() as f64;
@@ -537,9 +587,11 @@ impl PredictiveAnalytics {
         let mut components = HashMap::new();
 
         // Simplified seasonal decomposition (daily pattern)
-        if data.len() >= 48 { // At least 2 days
+        if data.len() >= 48 {
+            // At least 2 days
             for hour in 0..24 {
-                let hour_values: Vec<f64> = data.iter()
+                let hour_values: Vec<f64> = data
+                    .iter()
                     .enumerate()
                     .filter(|(i, _)| i % 24 == hour)
                     .map(|(_, (_, v))| *v)
@@ -556,7 +608,8 @@ impl PredictiveAnalytics {
     }
 
     fn detect_seasonality(&self, values: &[f64]) -> bool {
-        if values.len() < 48 { // Need at least 2 days
+        if values.len() < 48 {
+            // Need at least 2 days
             return false;
         }
 
@@ -596,8 +649,14 @@ pub struct ResourcePrediction {
 /// Scaling recommendations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ScalingRecommendation {
-    ScaleUp { additional_nodes: usize, reason: String },
-    ScaleDown { nodes_to_remove: usize, reason: String },
+    ScaleUp {
+        additional_nodes: usize,
+        reason: String,
+    },
+    ScaleDown {
+        nodes_to_remove: usize,
+        reason: String,
+    },
     MaintainCurrent,
 }
 
@@ -628,17 +687,33 @@ mod tests {
 
         // Add some test data
         for i in 0..50 {
-            analytics.add_data_point("cpu_usage_percent", current_timestamp() - (i * 3600), 50.0 + i as f64).await.unwrap();
+            analytics
+                .add_data_point(
+                    "cpu_usage_percent",
+                    current_timestamp() - (i * 3600),
+                    50.0 + i as f64,
+                )
+                .await
+                .unwrap();
         }
 
-        analytics.update_trend_analysis("cpu_usage_percent").await.unwrap();
+        analytics
+            .update_trend_analysis("cpu_usage_percent")
+            .await
+            .unwrap();
 
-        let trend = analytics.get_trend_analysis("cpu_usage_percent").await.unwrap();
+        let trend = analytics
+            .get_trend_analysis("cpu_usage_percent")
+            .await
+            .unwrap();
         assert!(trend.is_some());
 
         let trend = trend.unwrap();
         assert_eq!(trend.metric_name, "cpu_usage_percent");
-        assert!(matches!(trend.trend_direction, TrendDirection::Increasing | TrendDirection::StronglyIncreasing));
+        assert!(matches!(
+            trend.trend_direction,
+            TrendDirection::Increasing | TrendDirection::StronglyIncreasing
+        ));
     }
 
     #[tokio::test]
@@ -648,13 +723,28 @@ mod tests {
 
         // Add linear trend data
         for i in 0..24 {
-            analytics.add_data_point("test_metric", current_timestamp() - (i * 3600), 10.0 + i as f64 * 2.0).await.unwrap();
+            analytics
+                .add_data_point(
+                    "test_metric",
+                    current_timestamp() - (i * 3600),
+                    10.0 + i as f64 * 2.0,
+                )
+                .await
+                .unwrap();
         }
 
-        let prediction = analytics.linear_regression_predict(
-            &analytics.historical_data.read().await.get("test_metric").unwrap().clone(),
-            1
-        ).unwrap();
+        let prediction = analytics
+            .linear_regression_predict(
+                &analytics
+                    .historical_data
+                    .read()
+                    .await
+                    .get("test_metric")
+                    .unwrap()
+                    .clone(),
+                1,
+            )
+            .unwrap();
 
         assert!(prediction > 50.0); // Should predict continuation of upward trend
     }

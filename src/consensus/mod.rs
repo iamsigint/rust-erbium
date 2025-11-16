@@ -1,18 +1,18 @@
+pub mod cross_region;
 pub mod pos;
+pub mod randomness;
+pub mod rewards;
+pub mod sequence_integrity;
 pub mod slashing;
 pub mod validator;
-pub mod rewards;
-pub mod randomness;
-pub mod cross_region;
-pub mod sequence_integrity;
 
+use crate::utils::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::utils::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusConfig {
-    pub block_time: u64, // in seconds
+    pub block_time: u64,   // in seconds
     pub epoch_length: u64, // blocks per epoch
     pub max_validators: u64,
     pub min_stake: u64,
@@ -44,7 +44,12 @@ impl Default for ConsensusConfig {
 
             // Multi-node scalability defaults
             enable_cross_region_consensus: true,
-            regions: vec!["us-east".to_string(), "us-west".to_string(), "eu-central".to_string(), "ap-southeast".to_string()],
+            regions: vec![
+                "us-east".to_string(),
+                "us-west".to_string(),
+                "eu-central".to_string(),
+                "ap-southeast".to_string(),
+            ],
             region_quorum_requirement: 0.75, // 75% of regions
             block_sequence_integrity_check: true,
             max_consensus_delay_ms: 5000,
@@ -54,7 +59,7 @@ impl Default for ConsensusConfig {
             // Governance defaults
             governance_override_enabled: true,
             proposal_consensus_threshold: 0.67, // 2/3 majority
-            emergency_governance_quorum: 0.8, // 80% for emergency decisions
+            emergency_governance_quorum: 0.8,   // 80% for emergency decisions
         }
     }
 }
@@ -108,15 +113,18 @@ impl MultiNodeConsensusManager {
 
         let mut region_states = HashMap::new();
         for region in &config.regions {
-            region_states.insert(region.clone(), RegionConsensusState {
-                region_id: region.clone(),
-                local_height: 0,
-                validator_count: 0,
-                active_validators: 0,
-                last_block_timestamp: 0,
-                consensus_delay_ms: 0,
-                health_score: 100.0,
-            });
+            region_states.insert(
+                region.clone(),
+                RegionConsensusState {
+                    region_id: region.clone(),
+                    local_height: 0,
+                    validator_count: 0,
+                    active_validators: 0,
+                    last_block_timestamp: 0,
+                    consensus_delay_ms: 0,
+                    health_score: 100.0,
+                },
+            );
         }
 
         let cross_region_state = CrossRegionConsensusState {
@@ -148,7 +156,11 @@ impl MultiNodeConsensusManager {
     }
 
     /// Process cross-region consensus for a new block
-    pub async fn process_cross_region_consensus(&mut self, block_height: u64, region_id: &str) -> Result<bool> {
+    pub async fn process_cross_region_consensus(
+        &mut self,
+        block_height: u64,
+        region_id: &str,
+    ) -> Result<bool> {
         // Update region state
         if let Some(region_state) = self.cross_region_state.region_states.get_mut(region_id) {
             region_state.local_height = block_height;
@@ -156,8 +168,12 @@ impl MultiNodeConsensusManager {
         }
 
         // Check if global consensus can be achieved
-        let region_quorum_count = (self.config.regions.len() as f64 * self.config.region_quorum_requirement) as usize;
-        let regions_at_height = self.cross_region_state.region_states.values()
+        let region_quorum_count =
+            (self.config.regions.len() as f64 * self.config.region_quorum_requirement) as usize;
+        let regions_at_height = self
+            .cross_region_state
+            .region_states
+            .values()
             .filter(|state| state.local_height >= block_height)
             .count();
 
@@ -171,7 +187,11 @@ impl MultiNodeConsensusManager {
             // Update block sequence integrity
             self.update_sequence_integrity(block_height).await?;
 
-            log::info!("Global consensus achieved at height {} with {} regions", block_height, regions_at_height);
+            log::info!(
+                "Global consensus achieved at height {} with {} regions",
+                block_height,
+                regions_at_height
+            );
         }
 
         Ok(quorum_achieved)
@@ -189,10 +209,16 @@ impl MultiNodeConsensusManager {
             all_heights.push(region_state.local_height);
         }
 
-        if let Some(&max_height) = all_heights.iter().max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)) {
+        if let Some(&max_height) = all_heights
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        {
             // Check for gaps in sequence
             for height in 1..=max_height {
-                let regions_with_height = self.cross_region_state.region_states.values()
+                let regions_with_height = self
+                    .cross_region_state
+                    .region_states
+                    .values()
                     .filter(|state| state.local_height >= height)
                     .count();
 
@@ -219,7 +245,11 @@ impl MultiNodeConsensusManager {
         // Update integrity state
         self.sequence_integrity.gaps_detected = gaps;
         self.sequence_integrity.duplicates_detected = duplicates;
-        self.sequence_integrity.integrity_score = if integrity_score > 0.0 { integrity_score } else { 0.0 };
+        self.sequence_integrity.integrity_score = if integrity_score > 0.0 {
+            integrity_score
+        } else {
+            0.0
+        };
         self.sequence_integrity.last_check_timestamp = current_timestamp();
 
         Ok(integrity_score)
@@ -228,7 +258,9 @@ impl MultiNodeConsensusManager {
     /// Handle emergency consensus mode
     pub async fn activate_emergency_consensus(&mut self) -> Result<()> {
         if !self.config.emergency_consensus_mode {
-            return Err(crate::utils::error::BlockchainError::Consensus("Emergency consensus not enabled".to_string()));
+            return Err(crate::utils::error::BlockchainError::Consensus(
+                "Emergency consensus not enabled".to_string(),
+            ));
         }
 
         self.cross_region_state.emergency_mode_active = true;
@@ -241,8 +273,14 @@ impl MultiNodeConsensusManager {
     }
 
     /// Integrate governance decisions into consensus
-    pub async fn process_governance_consensus(&mut self, proposal_id: u64, votes: HashMap<String, bool>) -> Result<bool> {
-        self.governance_integration.process_proposal_consensus(proposal_id, votes).await
+    pub async fn process_governance_consensus(
+        &mut self,
+        proposal_id: u64,
+        votes: HashMap<String, bool>,
+    ) -> Result<bool> {
+        self.governance_integration
+            .process_proposal_consensus(proposal_id, votes)
+            .await
     }
 
     /// Get current cross-region consensus status
@@ -294,13 +332,20 @@ impl GovernanceConsensusIntegration {
         }
     }
 
-    pub async fn process_proposal_consensus(&mut self, proposal_id: u64, votes: HashMap<String, bool>) -> Result<bool> {
-        let state = self.active_proposals.entry(proposal_id).or_insert(GovernanceProposalState {
-            proposal_id,
-            votes: HashMap::new(),
-            consensus_reached: false,
-            consensus_result: None,
-        });
+    pub async fn process_proposal_consensus(
+        &mut self,
+        proposal_id: u64,
+        votes: HashMap<String, bool>,
+    ) -> Result<bool> {
+        let state = self
+            .active_proposals
+            .entry(proposal_id)
+            .or_insert(GovernanceProposalState {
+                proposal_id,
+                votes: HashMap::new(),
+                consensus_reached: false,
+                consensus_result: None,
+            });
 
         // Update votes
         for (voter, vote) in votes {
@@ -318,7 +363,9 @@ impl GovernanceConsensusIntegration {
                 state.consensus_reached = true;
                 state.consensus_result = Some(true);
                 return Ok(true);
-            } else if (total_votes - yes_votes) / total_votes >= self.config.proposal_consensus_threshold {
+            } else if (total_votes - yes_votes) / total_votes
+                >= self.config.proposal_consensus_threshold
+            {
                 state.consensus_reached = true;
                 state.consensus_result = Some(false);
                 return Ok(false);

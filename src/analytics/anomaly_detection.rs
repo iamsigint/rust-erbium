@@ -4,8 +4,8 @@
 //! including Z-score, Modified Z-score, Isolation Forest concepts, and
 //! time series anomaly detection for blockchain performance monitoring.
 
-use crate::utils::error::{Result, BlockchainError};
-use serde::{Serialize, Deserialize};
+use crate::utils::error::{BlockchainError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -58,7 +58,7 @@ pub struct AnomalyAlert {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum AnomalyType {
     #[default]
-    PointAnomaly,      // Single data point anomaly
+    PointAnomaly, // Single data point anomaly
     ContextualAnomaly, // Anomaly in context of surrounding data
     CollectiveAnomaly, // Anomaly in a sequence of points
     SeasonalAnomaly,   // Deviation from seasonal pattern
@@ -113,7 +113,9 @@ impl AnomalyDetector {
     pub async fn start_detection(&self) -> Result<()> {
         let mut is_running = self.is_running.write().await;
         if *is_running {
-            return Err(BlockchainError::Analytics("Anomaly detection already running".to_string()));
+            return Err(BlockchainError::Analytics(
+                "Anomaly detection already running".to_string(),
+            ));
         }
 
         *is_running = true;
@@ -123,26 +125,64 @@ impl AnomalyDetector {
     }
 
     /// Analyze metrics for anomalies
-    pub async fn analyze_metrics(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> Result<()> {
+    pub async fn analyze_metrics(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> Result<()> {
         if !self.config.enable_anomaly_detection {
             return Ok(());
         }
 
         // Define metrics to monitor for anomalies
         let metrics_to_check = vec![
-            ("cpu_usage_percent", metrics.cpu_usage_percent, AnomalySeverity::High),
-            ("memory_usage_percent", metrics.memory_usage_percent, AnomalySeverity::High),
-            ("network_bandwidth_mbps", metrics.network_bandwidth_mbps, AnomalySeverity::Medium),
-            ("transactions_per_second", metrics.transactions_per_second, AnomalySeverity::Medium),
-            ("average_network_latency_ms", metrics.average_network_latency_ms, AnomalySeverity::High),
+            (
+                "cpu_usage_percent",
+                metrics.cpu_usage_percent,
+                AnomalySeverity::High,
+            ),
+            (
+                "memory_usage_percent",
+                metrics.memory_usage_percent,
+                AnomalySeverity::High,
+            ),
+            (
+                "network_bandwidth_mbps",
+                metrics.network_bandwidth_mbps,
+                AnomalySeverity::Medium,
+            ),
+            (
+                "transactions_per_second",
+                metrics.transactions_per_second,
+                AnomalySeverity::Medium,
+            ),
+            (
+                "average_network_latency_ms",
+                metrics.average_network_latency_ms,
+                AnomalySeverity::High,
+            ),
             ("error_rate", metrics.error_rate, AnomalySeverity::Critical),
-            ("consensus_delay_ms", metrics.consensus_delay_ms, AnomalySeverity::Critical),
-            ("failed_auth_attempts", metrics.failed_auth_attempts as f64, AnomalySeverity::High),
-            ("anomaly_score", metrics.anomaly_score, AnomalySeverity::Medium),
+            (
+                "consensus_delay_ms",
+                metrics.consensus_delay_ms,
+                AnomalySeverity::Critical,
+            ),
+            (
+                "failed_auth_attempts",
+                metrics.failed_auth_attempts as f64,
+                AnomalySeverity::High,
+            ),
+            (
+                "anomaly_score",
+                metrics.anomaly_score,
+                AnomalySeverity::Medium,
+            ),
         ];
 
         for (metric_name, value, base_severity) in metrics_to_check {
-            if let Err(e) = self.detect_anomaly(metric_name, value, base_severity, metrics).await {
+            if let Err(e) = self
+                .detect_anomaly(metric_name, value, base_severity, metrics)
+                .await
+            {
                 log::warn!("Failed to detect anomaly for {}: {:?}", metric_name, e);
             }
         }
@@ -157,9 +197,13 @@ impl AnomalyDetector {
     }
 
     /// Get anomalies by severity
-    pub async fn get_anomalies_by_severity(&self, severity: AnomalySeverity) -> Result<Vec<AnomalyAlert>> {
+    pub async fn get_anomalies_by_severity(
+        &self,
+        severity: AnomalySeverity,
+    ) -> Result<Vec<AnomalyAlert>> {
         let alerts = self.recent_alerts.read().await;
-        let filtered: Vec<AnomalyAlert> = alerts.iter()
+        let filtered: Vec<AnomalyAlert> = alerts
+            .iter()
             .filter(|alert| alert.severity == severity)
             .cloned()
             .collect();
@@ -171,10 +215,22 @@ impl AnomalyDetector {
         let alerts = self.recent_alerts.read().await;
 
         let total_anomalies = alerts.len();
-        let critical_count = alerts.iter().filter(|a| matches!(a.severity, AnomalySeverity::Critical)).count();
-        let high_count = alerts.iter().filter(|a| matches!(a.severity, AnomalySeverity::High)).count();
-        let medium_count = alerts.iter().filter(|a| matches!(a.severity, AnomalySeverity::Medium)).count();
-        let low_count = alerts.iter().filter(|a| matches!(a.severity, AnomalySeverity::Low)).count();
+        let critical_count = alerts
+            .iter()
+            .filter(|a| matches!(a.severity, AnomalySeverity::Critical))
+            .count();
+        let high_count = alerts
+            .iter()
+            .filter(|a| matches!(a.severity, AnomalySeverity::High))
+            .count();
+        let medium_count = alerts
+            .iter()
+            .filter(|a| matches!(a.severity, AnomalySeverity::Medium))
+            .count();
+        let low_count = alerts
+            .iter()
+            .filter(|a| matches!(a.severity, AnomalySeverity::Low))
+            .count();
 
         // Calculate anomaly rate (anomalies per hour)
         let time_span_hours = if total_anomalies > 1 {
@@ -193,7 +249,8 @@ impl AnomalyDetector {
             *type_counts.entry(alert.anomaly_type.clone()).or_insert(0) += 1;
         }
 
-        let most_common_type = type_counts.into_iter()
+        let most_common_type = type_counts
+            .into_iter()
             .max_by_key(|(_, count)| *count)
             .map(|(anomaly_type, _)| anomaly_type);
 
@@ -236,14 +293,21 @@ impl AnomalyDetector {
         let context_anomaly = self.contextual_anomaly_detection(metric_name, value).await;
 
         // Combine results (if any algorithm detects anomaly)
-        let is_anomaly = z_score_anomaly.is_some() || modified_z_score_anomaly.is_some() ||
-                        iqr_anomaly.is_some() || context_anomaly.is_some();
+        let is_anomaly = z_score_anomaly.is_some()
+            || modified_z_score_anomaly.is_some()
+            || iqr_anomaly.is_some()
+            || context_anomaly.is_some();
 
         if is_anomaly {
             // Determine anomaly type and severity
             let (anomaly_type, severity, confidence, description) = self.classify_anomaly(
-                z_score_anomaly, modified_z_score_anomaly, iqr_anomaly, context_anomaly,
-                base_severity, value, &baseline
+                z_score_anomaly,
+                modified_z_score_anomaly,
+                iqr_anomaly,
+                context_anomaly,
+                base_severity,
+                value,
+                &baseline,
             );
 
             // Check for alert cooldown
@@ -291,7 +355,11 @@ impl AnomalyDetector {
         }
     }
 
-    fn modified_z_score_detection(&self, value: f64, baseline: &StatisticalBaseline) -> Option<f64> {
+    fn modified_z_score_detection(
+        &self,
+        value: f64,
+        baseline: &StatisticalBaseline,
+    ) -> Option<f64> {
         if baseline.mad == 0.0 {
             return None;
         }
@@ -328,11 +396,16 @@ impl AnomalyDetector {
         let seasonal_patterns = self.seasonal_patterns.read().await;
         if let Some(pattern) = seasonal_patterns.get(metric_name) {
             if pattern.len() >= self.config.moving_average_window {
-                let recent_avg = pattern.iter().rev().take(self.config.moving_average_window).sum::<f64>()
+                let recent_avg = pattern
+                    .iter()
+                    .rev()
+                    .take(self.config.moving_average_window)
+                    .sum::<f64>()
                     / self.config.moving_average_window as f64;
 
                 let deviation = (value - recent_avg).abs() / recent_avg.max(0.1);
-                if deviation > 0.3 { // 30% deviation from moving average
+                if deviation > 0.3 {
+                    // 30% deviation from moving average
                     return Some(deviation);
                 }
             }
@@ -362,7 +435,12 @@ impl AnomalyDetector {
         };
 
         // Calculate confidence based on agreement between methods
-        let detection_methods = [z_score.is_some(), modified_z.is_some(), iqr.is_some(), contextual.is_some()];
+        let detection_methods = [
+            z_score.is_some(),
+            modified_z.is_some(),
+            iqr.is_some(),
+            contextual.is_some(),
+        ];
         let agreement_count = detection_methods.iter().filter(|&&x| x).count() as f64;
         let confidence = agreement_count / detection_methods.len() as f64;
 
@@ -399,11 +477,12 @@ impl AnomalyDetector {
         let cutoff_time = current_timestamp() - cooldown_seconds;
 
         // Count recent alerts for this metric and type
-        let recent_count = alerts.iter()
+        let recent_count = alerts
+            .iter()
             .filter(|alert| {
-                alert.metric_name == metric_name &&
-                alert.anomaly_type == *anomaly_type &&
-                alert.timestamp > cutoff_time
+                alert.metric_name == metric_name
+                    && alert.anomaly_type == *anomaly_type
+                    && alert.timestamp > cutoff_time
             })
             .count();
 
@@ -411,35 +490,46 @@ impl AnomalyDetector {
         recent_count == 0
     }
 
-    fn build_context(&self, metrics: &crate::analytics::monitoring::ClusterMetrics) -> HashMap<String, String> {
+    fn build_context(
+        &self,
+        metrics: &crate::analytics::monitoring::ClusterMetrics,
+    ) -> HashMap<String, String> {
         let mut context = HashMap::new();
         context.insert("node_id".to_string(), metrics.node_id.clone());
         context.insert("region".to_string(), metrics.region.clone());
         context.insert("timestamp".to_string(), metrics.timestamp.to_string());
-        context.insert("active_connections".to_string(), metrics.active_connections.to_string());
+        context.insert(
+            "active_connections".to_string(),
+            metrics.active_connections.to_string(),
+        );
         context.insert("queue_depth".to_string(), metrics.queue_depth.to_string());
         context
     }
 
     async fn update_baseline(&self, metric_name: &str, value: f64) {
         let mut baselines = self.baselines.write().await;
-        let baseline = baselines.entry(metric_name.to_string()).or_insert_with(|| StatisticalBaseline {
-            mean: 0.0,
-            std_dev: 0.0,
-            median: 0.0,
-            mad: 0.0,
-            min_value: f64::INFINITY,
-            max_value: f64::NEG_INFINITY,
-            sample_count: 0,
-            last_updated: current_timestamp(),
-        });
+        let baseline =
+            baselines
+                .entry(metric_name.to_string())
+                .or_insert_with(|| StatisticalBaseline {
+                    mean: 0.0,
+                    std_dev: 0.0,
+                    median: 0.0,
+                    mad: 0.0,
+                    min_value: f64::INFINITY,
+                    max_value: f64::NEG_INFINITY,
+                    sample_count: 0,
+                    last_updated: current_timestamp(),
+                });
 
         // Update running statistics using Welford's online algorithm
         baseline.sample_count += 1;
         let delta = value - baseline.mean;
         baseline.mean += delta / baseline.sample_count as f64;
         let delta2 = value - baseline.mean;
-        baseline.std_dev = ((baseline.sample_count - 1) as f64 * baseline.std_dev.powi(2) + delta * delta2) / baseline.sample_count as f64;
+        baseline.std_dev = ((baseline.sample_count - 1) as f64 * baseline.std_dev.powi(2)
+            + delta * delta2)
+            / baseline.sample_count as f64;
         baseline.std_dev = baseline.std_dev.sqrt();
 
         // Update min/max
@@ -454,7 +544,9 @@ impl AnomalyDetector {
 
         // Update seasonal patterns
         let mut seasonal_patterns = self.seasonal_patterns.write().await;
-        let pattern = seasonal_patterns.entry(metric_name.to_string()).or_insert_with(Vec::new);
+        let pattern = seasonal_patterns
+            .entry(metric_name.to_string())
+            .or_insert_with(Vec::new);
         pattern.push(value);
 
         // Keep only recent patterns
@@ -464,8 +556,6 @@ impl AnomalyDetector {
         }
     }
 }
-
-
 
 /// Anomaly statistics summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -542,7 +632,9 @@ mod tests {
         };
 
         // Normal value
-        assert!(detector.modified_z_score_detection(55.0, &baseline).is_none());
+        assert!(detector
+            .modified_z_score_detection(55.0, &baseline)
+            .is_none());
 
         // Anomalous value
         let anomaly = detector.modified_z_score_detection(90.0, &baseline);
@@ -556,7 +648,9 @@ mod tests {
 
         // Add some values
         for i in 0..10 {
-            detector.update_baseline("test_metric", 50.0 + i as f64).await;
+            detector
+                .update_baseline("test_metric", 50.0 + i as f64)
+                .await;
         }
 
         let baselines = detector.baselines.read().await;
